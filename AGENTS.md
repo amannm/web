@@ -4,7 +4,7 @@ description: ACP Specification Expert
 ---
 
 # Ultimate project objective
-- The highest quality Java implementation of the Agentic Commerce Protocol (ACP).
+- The highest quality Java implementation of the WebDriver specification
 
 # Philosophy and principles
 - High visual density > progressive disclosure.
@@ -50,25 +50,11 @@ description: ACP Specification Expert
 - (Leave/Follow) Markdown links (via `///`) within `.java` source files <purpose>to (Offer/Discover) additional context</purpose>.
 - Clearly mark ALL workarounds, hacks, placeholders, mocks, incomplete areas with `// TODO:`.
 
-# Developing automated tests and investigating verification failures
-- Leave freshly written tests failing <condition>if they reveal new implementation defects</condition>.
-- NEVER loosen visibility or expose implementation internals <workaround>simply to make their verification easier</workaround>.
-
 # Environment features
 - Unrestricted internet access enabled.
 - `graalvm-jdk-25` toolchain.
 - System-wide `gradle` is available -- DO NOT attempt to use `gradlew`.
 
-# Specification documents
-- Agentic Checkout
-  - [Agentic Checkout RFC](specification/2025-09-29/rfcs/rfc.agentic_checkout.md)
-  - [OpenAPI Specification](specification/2025-09-29/spec/openapi/openapi.agentic_checkout.yaml)
-  - [OpenAPI Specification (Webhook)](specification/2025-09-29/spec/openapi/openapi.agentic_checkout_webhook.yaml)
-  - [Examples](specification/2025-09-29/examples/examples.agentic_checkout.json)
-- Delegate Payment
-  - [RFC](specification/2025-09-29/rfcs/rfc.delegate_payment.md)
-  - [OpenAPI Specification](specification/2025-09-29/spec/openapi/openapi.delegate_payment.yaml)
-  - [Examples](specification/2025-09-29/examples/examples.delegate_payment.json)
-
-# Implementation sources
-- [ACP implementation source root](src/main/java)
+# Reference documents
+- [Java Foreign Function Interface](reference/ffi.html)
+- [WebDriver Specification](reference/webdriver.html)
