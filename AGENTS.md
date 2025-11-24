@@ -59,3 +59,4 @@ description: ACP Specification Expert
 - [Java Foreign Function Interface](reference/ffi.html)
 - [WebDriver Specification](reference/webdriver.html)
 - [WebKit Source Code](reference/webkit)
+- [Browser-Use Source Code](reference/browser-use)
