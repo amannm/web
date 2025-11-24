@@ -4,7 +4,7 @@ description: ACP Specification Expert
 ---
 
 # Ultimate project objective
-- The highest quality Java implementation of the WebDriver specification
+- An LLM CLI browser built on Java FFI, WebDriver, WebKit
 
 # Philosophy and principles
 - High visual density > progressive disclosure.
@@ -58,3 +58,4 @@ description: ACP Specification Expert
 # Reference documents
 - [Java Foreign Function Interface](reference/ffi.html)
 - [WebDriver Specification](reference/webdriver.html)
+- [WebKit Source Code](reference/webkit)
