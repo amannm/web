@@ -4,7 +4,7 @@ description: ACP Specification Expert
 ---
 
 # Ultimate project objective
-- An LLM CLI browser built on Java FFI, WebDriver, WebKit
+- An LLM-friendly CLI-based web browser built on Java FFI, WebDriver, WebKit
 
 # Philosophy and principles
 - High visual density > progressive disclosure.
