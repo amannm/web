@@ -63,7 +63,7 @@ public final class ChromiumProcess implements AutoCloseable {
                 var processBuilder = new ProcessBuilder(command);
                 processBuilder.redirectErrorStream(true);
                 var capturedOutput = new StringBuilder();
-                Process process = processBuilder.start();
+                var process = processBuilder.start();
                 var in = process.getInputStream();
                 Thread.ofPlatform().daemon(true).name("chromium-log-drain").start(() -> {
                     try (var stream = in) {

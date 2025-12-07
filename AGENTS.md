@@ -30,8 +30,6 @@ description: Web browsing expert.
 - Static analysis > runtime debugging.
 
 # Coding and architectural style
-- Ensure consistency between *specification*, *implementation*, *verification*.
-- You cannot modify the specification.
 - Make illegal states unrepresentable and valid operations obvious.
 - Keep external dependencies furthest from the center of a codebase.
 - Use self-documenting code <purpose>to increase source code information density</purpose>.
@@ -39,6 +37,7 @@ description: Web browsing expert.
 - Write strongly-typed, idiomatic, modern Java at language level 25.
 
 # Specific language habits and preferences
+- Try to keep all source code files over ~69 lines and under ~420 lines.
 - Never hide exceptions or warnings.
 - Never introduce unchecked casts.
 - Never use `Optional<T>` for anything other than method return types.

@@ -22,6 +22,7 @@ public final class Entrypoint implements Runnable {
         var entrypoint = new Entrypoint();
         var commandLine = new CommandLine(entrypoint);
         commandLine.setCaseInsensitiveEnumValuesAllowed(false);
+        commandLine.addSubcommand(new PerceiveCommand());
         return commandLine;
     }
 

@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +18,7 @@ import java.time.Duration;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -97,8 +99,12 @@ public final class ChromiumDistribution {
         }
     }
 
-    private void unpackZip(Path archive, Path destination) throws IOException {
-        // Using ZipInputStream avoids retaining the entire archive on disk if a caller later replaces this with a stream.
+    private void unpackZip(Path archive, Path destination) throws IOException, InterruptedException {
+        Files.createDirectories(destination);
+        if (runSystemUnzip(archive, destination)) {
+            return;
+        }
+        // Fallback for platforms without unzip; permissions and symlinks will not be preserved.
         try (var zip = new ZipInputStream(Files.newInputStream(archive))) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
@@ -108,11 +114,34 @@ public final class ChromiumDistribution {
                 }
                 if (entry.isDirectory()) {
                     Files.createDirectories(target);
-                } else {
-                    Files.createDirectories(target.getParent());
-                    Files.copy(zip, target, StandardCopyOption.REPLACE_EXISTING);
+                    continue;
                 }
+                Files.createDirectories(target.getParent());
+                Files.copy(zip, target, StandardCopyOption.REPLACE_EXISTING);
             }
+        }
+    }
+
+    private boolean runSystemUnzip(Path archive, Path destination) throws IOException, InterruptedException {
+        try {
+            var process = new ProcessBuilder("unzip", "-qo", archive.toString(), "-d", destination.toString())
+                    .redirectErrorStream(true)
+                    .start();
+            if (!process.waitFor(2, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new IOException("unzip timed out");
+            }
+            var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+            if (process.exitValue() != 0) {
+                throw new IOException("unzip failed (" + process.exitValue() + "): " + output);
+            }
+            return true;
+        } catch (IOException e) {
+            var message = e.getMessage();
+            if (message != null && message.contains("No such file or directory")) {
+                return false; // unzip not available on host
+            }
+            throw e;
         }
     }
 

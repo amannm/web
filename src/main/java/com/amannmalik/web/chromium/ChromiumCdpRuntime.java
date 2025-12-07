@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class ChromiumCdpRuntime implements AutoCloseable {
 
-    private static final Duration VERSION_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration DISCOVERY_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(5);
 
     private final ChromiumProcess chromiumProcess;
@@ -42,10 +42,10 @@ public final class ChromiumCdpRuntime implements AutoCloseable {
     public static ChromiumCdpRuntime start(ChromiumDistribution distribution, Duration connectTimeout) {
         Objects.requireNonNull(distribution, "distribution must not be null");
         Objects.requireNonNull(connectTimeout, "connectTimeout must not be null");
-        ChromiumProcess process = ChromiumProcess.launch(distribution);
-        HttpClient httpClient = HttpClient.newHttpClient();
+        var process = ChromiumProcess.launch(distribution);
+        var httpClient = HttpClient.newHttpClient();
         try {
-            URI endpoint = resolveWebSocketEndpoint(process, httpClient);
+            var endpoint = resolvePageEndpoint(process, httpClient);
             return new ChromiumCdpRuntime(process, endpoint, connectTimeout);
         } catch (RuntimeException e) {
             process.close();
@@ -57,7 +57,7 @@ public final class ChromiumCdpRuntime implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException("Runtime already closed");
         }
-        CdpWebSocketClient client = CdpWebSocketClient.connect(webSocketEndpoint, connectTimeout).join();
+        var client = CdpWebSocketClient.connect(webSocketEndpoint, connectTimeout).join();
         if (closed.get()) {
             client.close();
             throw new IllegalStateException("Runtime already closed");
@@ -80,7 +80,7 @@ public final class ChromiumCdpRuntime implements AutoCloseable {
             return;
         }
         RuntimeException failure = null;
-        for (CdpClient client : clients) {
+        for (var client : clients) {
             try {
                 client.close();
             } catch (RuntimeException error) {
@@ -105,22 +105,35 @@ public final class ChromiumCdpRuntime implements AutoCloseable {
         return head;
     }
 
-    private static URI resolveWebSocketEndpoint(ChromiumProcess process, HttpClient httpClient) {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(process.webSocketDebuggerUrl())
-                .timeout(VERSION_TIMEOUT)
+    private static URI resolvePageEndpoint(ChromiumProcess process, HttpClient httpClient) {
+        try {
+            var listEndpoint = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + process.debuggingPort() + "/json/list"))
+                .timeout(DISCOVERY_TIMEOUT)
                 .GET()
                 .build();
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                throw new IllegalStateException("Chromium /json/version returned " + response.statusCode());
+            var listResponse = httpClient.send(listEndpoint, HttpResponse.BodyHandlers.ofString());
+            if (listResponse.statusCode() == 200) {
+                var endpoint = firstPageEndpoint(listResponse.body());
+                if (endpoint != null) {
+                    return endpoint;
+                }
             }
-            try (var reader = Json.createReader(new StringReader(response.body()))) {
-                var version = reader.readObject();
-                String endpoint = version.getString("webSocketDebuggerUrl", "");
+
+            var newPageRequest = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + process.debuggingPort() + "/json/new"))
+                .timeout(DISCOVERY_TIMEOUT)
+                .GET()
+                .build();
+            var newPageResponse = httpClient.send(newPageRequest, HttpResponse.BodyHandlers.ofString());
+            if (newPageResponse.statusCode() != 200) {
+                throw new IllegalStateException("Chromium /json/new returned " + newPageResponse.statusCode());
+            }
+            try (var reader = Json.createReader(new StringReader(newPageResponse.body()))) {
+                var payload = reader.readObject();
+                var endpoint = payload.getString("webSocketDebuggerUrl", "");
                 if (endpoint.isBlank()) {
-                    throw new IllegalStateException("Chromium did not advertise a CDP WebSocket endpoint");
+                    throw new IllegalStateException("Chromium did not advertise a page CDP endpoint");
                 }
                 return URI.create(endpoint);
             }
@@ -129,6 +142,24 @@ public final class ChromiumCdpRuntime implements AutoCloseable {
             throw new IllegalStateException("Interrupted while resolving CDP endpoint", e);
         } catch (IOException e) {
             throw new IllegalStateException("Unable to resolve CDP endpoint", e);
+        }
+    }
+
+    private static URI firstPageEndpoint(String jsonPayload) {
+        try (var reader = Json.createReader(new StringReader(jsonPayload))) {
+            var array = reader.readArray();
+            for (var value : array) {
+                var obj = value.asJsonObject();
+                var type = obj.getString("type", "");
+                if (!"page".equalsIgnoreCase(type)) {
+                    continue;
+                }
+                var endpoint = obj.getString("webSocketDebuggerUrl", "");
+                if (!endpoint.isBlank()) {
+                    return URI.create(endpoint);
+                }
+            }
+            return null;
         }
     }
 }

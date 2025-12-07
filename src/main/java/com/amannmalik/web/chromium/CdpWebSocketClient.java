@@ -40,7 +40,7 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
     }
 
     public static CompletableFuture<CdpWebSocketClient> connect(URI endpoint, Duration connectTimeout) {
-        HttpClient httpClient = HttpClient.newHttpClient();
+        var httpClient = HttpClient.newHttpClient();
         WebSocketConnector connector = new DefaultConnector(httpClient, connectTimeout);
         return connect(endpoint, connectTimeout, connector);
     }
@@ -49,7 +49,7 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
         Objects.requireNonNull(endpoint, "CDP endpoint must not be null");
         Objects.requireNonNull(connectTimeout, "connectTimeout must not be null");
         Objects.requireNonNull(connector, "connector must not be null");
-        CdpWebSocketClient client = new CdpWebSocketClient(endpoint, connectTimeout, connector);
+        var client = new CdpWebSocketClient(endpoint, connectTimeout, connector);
         connector.connect(endpoint, client)
             .whenComplete((socket, error) -> {
                 if (error != null) {
@@ -113,7 +113,7 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
     public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
         textBuffer.append(data);
         if (last) {
-            String payload = textBuffer.toString();
+            var payload = textBuffer.toString();
             textBuffer.setLength(0);
             handlePayload(payload);
         }
@@ -136,10 +136,10 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
     }
 
     private CompletableFuture<CdpSuccess> dispatch(CdpCommand command) {
-        long id = nextId.getAndIncrement();
-        CompletableFuture<CdpSuccess> future = new CompletableFuture<>();
+        var id = nextId.getAndIncrement();
+        var future = new CompletableFuture<CdpSuccess>();
         pending.put(id, future);
-        JsonObject payload = builderFactory.createObjectBuilder()
+        var payload = builderFactory.createObjectBuilder()
             .add("id", id)
             .add("method", command.method())
             .add("params", command.params())
@@ -156,7 +156,7 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
 
     private void handlePayload(String payload) {
         try (var reader = readerFactory.createReader(new StringReader(payload))) {
-            JsonObject message = reader.readObject();
+            var message = reader.readObject();
             if (message.containsKey("id")) {
                 handleResponse(message);
                 return;
@@ -173,34 +173,34 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
     }
 
     private void handleResponse(JsonObject message) {
-        long id = message.getJsonNumber("id").longValueExact();
-        CompletableFuture<CdpSuccess> future = pending.remove(id);
+        var id = message.getJsonNumber("id").longValueExact();
+        var future = pending.remove(id);
         if (future == null) {
             return;
         }
         if (message.containsKey("error")) {
-            JsonObject error = message.getJsonObject("error");
-            int code = error.getInt("code");
-            String msg = error.getString("message", "unknown CDP error");
-            JsonValue data = error.containsKey("data") ? error.get("data") : JsonValue.NULL;
+            var error = message.getJsonObject("error");
+            var code = error.getInt("code");
+            var msg = error.getString("message", "unknown CDP error");
+            var data = error.containsKey("data") ? error.get("data") : JsonValue.NULL;
             future.completeExceptionally(new CdpRequestException(code, msg));
             return;
         }
-        JsonObject result = message.containsKey("result") ? message.getJsonObject("result") : Json.createObjectBuilder().build();
+        var result = message.containsKey("result") ? message.getJsonObject("result") : Json.createObjectBuilder().build();
         future.complete(new CdpSuccess(id, result));
     }
 
     private void handleEvent(JsonObject message) {
-        String method = message.getString("method");
-        JsonObject params = message.containsKey("params") ? message.getJsonObject("params") : Json.createObjectBuilder().build();
-        CdpEvent event = new CdpEvent(method, params);
-        for (CdpEventListener listener : listeners) {
+        var method = message.getString("method");
+        var params = message.containsKey("params") ? message.getJsonObject("params") : Json.createObjectBuilder().build();
+        var event = new CdpEvent(method, params);
+        for (var listener : listeners) {
             listener.onEvent(event);
         }
     }
 
     private void failPending(Throwable error) {
-        for (CompletableFuture<CdpSuccess> future : pending.values()) {
+        for (var future : pending.values()) {
             future.completeExceptionally(error);
         }
         pending.clear();
