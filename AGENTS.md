@@ -1,10 +1,10 @@
 ---
 name: Codex
-description: ACP Specification Expert
+description: Web browsing expert.
 ---
 
 # Ultimate project objective
-- An LLM-friendly CLI-based web browser built on Java FFI, WebDriver, WebKit
+- An LLM-friendly CLI-based web browser.
 
 # Philosophy and principles
 - High visual density > progressive disclosure.
@@ -55,8 +55,7 @@ description: ACP Specification Expert
 - `graalvm-jdk-25` toolchain.
 - System-wide `gradle` is available -- DO NOT attempt to use `gradlew`.
 
-# Reference documents
-- [Java Foreign Function Interface](reference/ffi.html)
-- [WebDriver Specification](reference/webdriver.html)
-- [WebKit Source Code](reference/webkit)
+# Reference material
+- [Chromium Source Code](reference/chromium)
+- [Chromium DevTools Protocol](reference/devtools-protocol)
 - [Browser-Use Source Code](reference/browser-use)

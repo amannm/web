@@ -6,7 +6,7 @@ import java.io.PrintWriter;
 
 @CommandLine.Command(
         name = "web",
-        description = "CLI scaffold for the WebKit WebDriver FFI browser.",
+        description = "A web browser for agents.",
         mixinStandardHelpOptions = true,
         versionProvider = Entrypoint.ManifestVersionProvider.class
 )
@@ -14,7 +14,7 @@ public final class Entrypoint implements Runnable {
     public Entrypoint() {
     }
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         System.exit(commandLine().execute(args));
     }
 

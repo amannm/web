@@ -1,0 +1,1313 @@
+{
+  "title": "PerceptionSnapshot",
+  "type": "object",
+  "description": "Unified snapshot of everything needed to perceive the current viewport for a page.",
+  "required": [
+    "timestamp",
+    "device",
+    "viewport",
+    "frames"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Version of this perception schema, e.g. '1.0.0'."
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix timestamp in milliseconds when the snapshot was captured."
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "Identifier for the debugging/session context this snapshot belongs to."
+    },
+    "navigationId": {
+      "type": "string",
+      "description": "Identifier for a navigation within the session (maps to CDP loaderId or custom id)."
+    },
+    "device": {
+      "$ref": "#/definitions/DeviceState"
+    },
+    "viewport": {
+      "$ref": "#/definitions/ViewportState"
+    },
+    "frames": {
+      "type": "object",
+      "description": "Map of CDP frameId -> per-frame perception snapshot.",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[^\\s]+$": {
+          "$ref": "#/definitions/FrameSnapshot"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pixels": {
+      "$ref": "#/definitions/PixelsSnapshot"
+    },
+    "meta": {
+      "type": "object",
+      "description": "Additional metadata that does not affect perception but helps with analysis/logging.",
+      "additionalProperties": true,
+      "properties": {
+        "protocolVersion": {
+          "type": "string",
+          "description": "Chrome DevTools Protocol version or browser version."
+        },
+        "browserUserAgent": {
+          "type": "string",
+          "description": "Browser user agent string at capture time."
+        },
+        "captureSource": {
+          "type": "string",
+          "description": "System or tool that produced the snapshot."
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceState": {
+      "type": "object",
+      "description": "Logical device configuration as seen by the page (often from Emulation.*).",
+      "required": [
+        "width",
+        "height",
+        "deviceScaleFactor",
+        "mobile"
+      ],
+      "properties": {
+        "width": {
+          "type": "number",
+          "description": "CSS pixel width of the emulated device viewport."
+        },
+        "height": {
+          "type": "number",
+          "description": "CSS pixel height of the emulated device viewport."
+        },
+        "deviceScaleFactor": {
+          "type": "number",
+          "description": "Device pixel ratio (DPR)."
+        },
+        "mobile": {
+          "type": "boolean",
+          "description": "Whether mobile emulation is enabled."
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "User agent string presented to the page."
+        },
+        "locale": {
+          "type": "string",
+          "description": "Primary locale (e.g. 'en-US') as seen by the page."
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone identifier, e.g. 'America/Los_Angeles'."
+        },
+        "screenOrientation": {
+          "type": "string",
+          "enum": [
+            "portraitPrimary",
+            "portraitSecondary",
+            "landscapePrimary",
+            "landscapeSecondary"
+          ],
+          "description": "Current screen orientation."
+        },
+        "visionDeficiency": {
+          "type": "string",
+          "enum": [
+            "none",
+            "achromatopsia",
+            "blurredVision",
+            "deuteranopia",
+            "protanopia",
+            "tritanopia"
+          ],
+          "description": "Any emulated vision deficiency."
+        },
+        "reducedMotion": {
+          "type": "string",
+          "enum": [
+            "no-preference",
+            "reduce"
+          ],
+          "description": "Effective prefers-reduced-motion value."
+        },
+        "colorScheme": {
+          "type": "string",
+          "enum": [
+            "light",
+            "dark",
+            "no-preference"
+          ],
+          "description": "Effective prefers-color-scheme value."
+        },
+        "safeAreaInsets": {
+          "$ref": "#/definitions/BoxEdges",
+          "description": "Safe area insets (CSS pixels) from display cutouts or notches."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ViewportState": {
+      "type": "object",
+      "description": "Layout and visual viewport geometry and scrollable content size (from Page.getLayoutMetrics).",
+      "required": [
+        "layoutViewport",
+        "visualViewport",
+        "contentSize"
+      ],
+      "properties": {
+        "layoutViewport": {
+          "$ref": "#/definitions/LayoutViewport"
+        },
+        "visualViewport": {
+          "$ref": "#/definitions/VisualViewport"
+        },
+        "contentSize": {
+          "$ref": "#/definitions/Size"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LayoutViewport": {
+      "type": "object",
+      "description": "The layout viewport (CSS pixels) used for layout and document coordinate system.",
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "VisualViewport": {
+      "type": "object",
+      "description": "The visual viewport (what the user currently sees, including zoom & scroll).",
+      "required": [
+        "offsetX",
+        "offsetY",
+        "pageX",
+        "pageY",
+        "width",
+        "height",
+        "scale"
+      ],
+      "properties": {
+        "offsetX": {
+          "type": "number",
+          "description": "Horizontal offset from layout viewport origin in CSS pixels."
+        },
+        "offsetY": {
+          "type": "number",
+          "description": "Vertical offset from layout viewport origin in CSS pixels."
+        },
+        "pageX": {
+          "type": "number",
+          "description": "Horizontal offset relative to page coordinates in CSS pixels."
+        },
+        "pageY": {
+          "type": "number",
+          "description": "Vertical offset relative to page coordinates in CSS pixels."
+        },
+        "width": {
+          "type": "number",
+          "description": "Visual viewport width in CSS pixels."
+        },
+        "height": {
+          "type": "number",
+          "description": "Visual viewport height in CSS pixels."
+        },
+        "scale": {
+          "type": "number",
+          "description": "Page scale factor (zoom)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "FrameSnapshot": {
+      "type": "object",
+      "description": "Per-frame aggregation of DOM, layout, styles, semantics, and media.",
+      "required": [
+        "frameId",
+        "url",
+        "domTree",
+        "layoutTree",
+        "styles",
+        "layers",
+        "accessibilityTree"
+      ],
+      "properties": {
+        "frameId": {
+          "type": "string",
+          "description": "CDP frameId for this frame."
+        },
+        "loaderId": {
+          "type": "string",
+          "description": "CDP loaderId for the navigation that produced this frame content."
+        },
+        "parentFrameId": {
+          "type": "string",
+          "description": "frameId of the parent frame, if any."
+        },
+        "name": {
+          "type": "string",
+          "description": "Frame name attribute, if any."
+        },
+        "url": {
+          "type": "string",
+          "description": "Document URL for the frame."
+        },
+        "origin": {
+          "type": "string",
+          "description": "Security origin for the frame."
+        },
+        "securityOrigin": {
+          "type": "string",
+          "description": "Browser-computed security origin string."
+        },
+        "isMainFrame": {
+          "type": "boolean",
+          "description": "Whether this is the top-level frame."
+        },
+        "domTree": {
+          "$ref": "#/definitions/DomSnapshot"
+        },
+        "layoutTree": {
+          "$ref": "#/definitions/LayoutSnapshot"
+        },
+        "styles": {
+          "$ref": "#/definitions/StyleSnapshot"
+        },
+        "layers": {
+          "$ref": "#/definitions/LayerTreeSnapshot"
+        },
+        "accessibilityTree": {
+          "$ref": "#/definitions/AccessibilitySnapshot"
+        },
+        "resources": {
+          "type": "array",
+          "description": "Network and resource-level info related to this frame.",
+          "items": {
+            "$ref": "#/definitions/ResourceSnapshot"
+          }
+        },
+        "animations": {
+          "type": "array",
+          "description": "Animations currently affecting content in this frame.",
+          "items": {
+            "$ref": "#/definitions/AnimationSnapshot"
+          }
+        },
+        "media": {
+          "type": "array",
+          "description": "Audio and video players currently in this frame.",
+          "items": {
+            "$ref": "#/definitions/MediaSnapshot"
+          }
+        },
+        "interactions": {
+          "$ref": "#/definitions/InteractionSnapshot"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DomSnapshot": {
+      "type": "object",
+      "description": "Compact snapshot of the DOM tree for a frame.",
+      "required": [
+        "nodes"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DomNode"
+          }
+        },
+        "rootNodeId": {
+          "type": "string",
+          "description": "nodeId of the documentElement or snapshot root."
+        }
+      },
+      "additionalProperties": false
+    },
+    "DomNode": {
+      "type": "object",
+      "description": "Single DOM node entry with structural and minimal visual metadata.",
+      "required": [
+        "nodeId",
+        "backendNodeId",
+        "nodeType",
+        "nodeName"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "description": "Synthetic stable node identifier within this snapshot (maps to CDP nodeId)."
+        },
+        "backendNodeId": {
+          "type": "number",
+          "description": "CDP BackendNodeId, stable across sessions if the same node is re-resolved."
+        },
+        "frameId": {
+          "type": "string",
+          "description": "Frame this node belongs to (matches FrameSnapshot.frameId)."
+        },
+        "nodeType": {
+          "type": "integer",
+          "description": "DOM nodeType (1=Element, 3=Text, 8=Comment, 9=Document, etc.)."
+        },
+        "nodeName": {
+          "type": "string",
+          "description": "Uppercase tag name for elements, or '#text', '#document', etc."
+        },
+        "localName": {
+          "type": "string",
+          "description": "Lowercase local tag name for elements."
+        },
+        "nodeValue": {
+          "type": "string",
+          "description": "Text content for text nodes or other node values."
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Element attributes as name -> value map.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "childNodeIds": {
+          "type": "array",
+          "description": "Ids of direct children in DOM order.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "shadowRootIds": {
+          "type": "array",
+          "description": "Ids of shadow root nodes attached to this host, if any.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contentDocumentFrameId": {
+          "type": "string",
+          "description": "FrameId of the child frame if this node is an iframe/frame/embed."
+        },
+        "pseudoType": {
+          "type": "string",
+          "description": "Pseudo-element type (e.g. 'before', 'after'), if this node represents a pseudo-element."
+        },
+        "isClickable": {
+          "type": "boolean",
+          "description": "Heuristic flag whether this node is treated as clickable."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Optional friendly name derived from tag, id, class, or role (for debugging)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "LayoutSnapshot": {
+      "type": "object",
+      "description": "Layout boxes and text boxes for a frame.",
+      "required": [
+        "layoutNodes"
+      ],
+      "properties": {
+        "layoutNodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LayoutNode"
+          }
+        },
+        "textBoxes": {
+          "type": "array",
+          "description": "Inline text boxes with precise quads for hit testing.",
+          "items": {
+            "$ref": "#/definitions/TextBox"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LayoutNode": {
+      "type": "object",
+      "description": "Layout-level info for a DOM node (roughly from DOMSnapshot.LayoutTreeSnapshot).",
+      "required": [
+        "nodeId",
+        "backendNodeId",
+        "frameId",
+        "box"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "backendNodeId": {
+          "type": "number"
+        },
+        "frameId": {
+          "type": "string"
+        },
+        "box": {
+          "$ref": "#/definitions/BoxModel"
+        },
+        "clientRect": {
+          "$ref": "#/definitions/Rect"
+        },
+        "scrollRect": {
+          "$ref": "#/definitions/Rect"
+        },
+        "offsetRect": {
+          "$ref": "#/definitions/Rect"
+        },
+        "zIndex": {
+          "type": "number",
+          "description": "Effective stacking order index, if known."
+        },
+        "displayType": {
+          "type": "string",
+          "description": "Display type at layout time (block, inline, flex, grid, etc.)."
+        },
+        "isStackingContext": {
+          "type": "boolean"
+        },
+        "transformMatrix": {
+          "type": "array",
+          "description": "Optional 4x4 transform matrix in row-major order.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 16,
+          "maxItems": 16
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scrollOffset": {
+          "$ref": "#/definitions/Point"
+        },
+        "clipPath": {
+          "type": "string",
+          "description": "Serialized clip-path information if any."
+        },
+        "overflowX": {
+          "type": "string"
+        },
+        "overflowY": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TextBox": {
+      "type": "object",
+      "description": "Inline text box information, usually from DOMSnapshot.TextBoxSnapshot.",
+      "required": [
+        "nodeId",
+        "quad",
+        "text"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "description": "DOM node id whose text this box belongs to."
+        },
+        "quad": {
+          "type": "array",
+          "description": "8-number quad [x1,y1,x2,y2,x3,y3,x4,y4] in CSS pixels.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 8,
+          "maxItems": 8
+        },
+        "text": {
+          "type": "string",
+          "description": "Text content contained in this box."
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "ltr",
+            "rtl",
+            "auto"
+          ],
+          "description": "Text direction."
+        }
+      },
+      "additionalProperties": false
+    },
+    "StyleSnapshot": {
+      "type": "object",
+      "description": "Computed styles and pseudo-styles for nodes in a frame.",
+      "required": [
+        "nodes"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "description": "Per-node styles.",
+          "items": {
+            "$ref": "#/definitions/NodeStyle"
+          }
+        },
+        "mediaQueries": {
+          "type": "array",
+          "description": "Active and inactive media queries that depend on viewport/device.",
+          "items": {
+            "$ref": "#/definitions/MediaQueryInfo"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "NodeStyle": {
+      "type": "object",
+      "description": "Styles applied to a single node.",
+      "required": [
+        "nodeId",
+        "computed"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "computed": {
+          "type": "object",
+          "description": "Map of CSS property name -> computed value string.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "pseudo": {
+          "type": "object",
+          "description": "Computed styles for pseudo-elements and pseudo-classes.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "inherited": {
+          "type": "array",
+          "description": "Optional chain of inherited computed values from ancestors.",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "platformFonts": {
+          "type": "array",
+          "description": "Fonts actually used for rendering text in this node.",
+          "items": {
+            "$ref": "#/definitions/PlatformFont"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PlatformFont": {
+      "type": "object",
+      "required": [
+        "familyName"
+      ],
+      "properties": {
+        "familyName": {
+          "type": "string"
+        },
+        "glyphCount": {
+          "type": "integer"
+        },
+        "isCustomFont": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MediaQueryInfo": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Full media query text."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether this media query currently matches."
+        },
+        "source": {
+          "type": "string",
+          "description": "Origin of the rule (stylesheet, inline, etc.)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "LayerTreeSnapshot": {
+      "type": "object",
+      "description": "Compositor layer tree affecting this frame.",
+      "required": [
+        "layers"
+      ],
+      "properties": {
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Layer"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Layer": {
+      "type": "object",
+      "description": "Single composited layer.",
+      "required": [
+        "layerId",
+        "bounds",
+        "paintCount"
+      ],
+      "properties": {
+        "layerId": {
+          "type": "string"
+        },
+        "parentLayerId": {
+          "type": "string"
+        },
+        "backendNodeId": {
+          "type": "number"
+        },
+        "frameId": {
+          "type": "string"
+        },
+        "bounds": {
+          "$ref": "#/definitions/Rect"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "paintCount": {
+          "type": "integer"
+        },
+        "scrollRects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScrollRect"
+          }
+        },
+        "stickyPositionConstraint": {
+          "$ref": "#/definitions/StickyPositionConstraint"
+        },
+        "transform": {
+          "type": "array",
+          "description": "Optional 4x4 transform matrix for the layer.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 16,
+          "maxItems": 16
+        }
+      },
+      "additionalProperties": false
+    },
+    "ScrollRect": {
+      "type": "object",
+      "required": [
+        "rect",
+        "type"
+      ],
+      "properties": {
+        "rect": {
+          "$ref": "#/definitions/Rect"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StickyPositionConstraint": {
+      "type": "object",
+      "properties": {
+        "stickyBoxRect": {
+          "$ref": "#/definitions/Rect"
+        },
+        "containingBlockRect": {
+          "$ref": "#/definitions/Rect"
+        },
+        "nearestLayerShiftingStickyBox": {
+          "type": "string"
+        },
+        "nearestLayerShiftingContainingBlock": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AccessibilitySnapshot": {
+      "type": "object",
+      "description": "Accessibility tree semantics for this frame.",
+      "required": [
+        "nodes"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AxNode"
+          }
+        },
+        "rootIds": {
+          "type": "array",
+          "description": "Ids of root AX nodes for this frame.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AxNode": {
+      "type": "object",
+      "description": "Accessibility node (roughly Accessibility.AXNode).",
+      "required": [
+        "axId",
+        "role"
+      ],
+      "properties": {
+        "axId": {
+          "type": "string",
+          "description": "Accessibility node identifier."
+        },
+        "backendDOMNodeId": {
+          "type": "number"
+        },
+        "frameId": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "description": "Accessible role name."
+        },
+        "chromeRole": {
+          "type": "string",
+          "description": "Chrome-specific internal role, if exposed."
+        },
+        "name": {
+          "type": "string",
+          "description": "Accessible name."
+        },
+        "description": {
+          "type": "string"
+        },
+        "value": {
+          "description": "Current value; may be string, number, or boolean.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "states": {
+          "type": "object",
+          "description": "Boolean accessibility states, e.g. focused, disabled, expanded.",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "properties": {
+          "type": "object",
+          "description": "Non-boolean AX properties such as range min/max, value text, etc.",
+          "additionalProperties": true
+        },
+        "childIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parentId": {
+          "type": "string"
+        },
+        "labelledBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "describedBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourceSnapshot": {
+      "type": "object",
+      "description": "Resource as perceived by the page (through Network.* and Page.*).",
+      "required": [
+        "requestId",
+        "url",
+        "type"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "frameId": {
+          "type": "string"
+        },
+        "loaderId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "description": "ResourceType (Document, Stylesheet, Image, Media, Font, Script, XHR, Fetch, Other)."
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer",
+          "description": "HTTP status code if available."
+        },
+        "fromCache": {
+          "type": "boolean"
+        },
+        "encodedDataLength": {
+          "type": "number"
+        },
+        "timing": {
+          "type": "object",
+          "description": "Network timing information; subset of Network.ResourceTiming.",
+          "additionalProperties": true
+        },
+        "failed": {
+          "type": "boolean",
+          "description": "Whether loading failed."
+        },
+        "errorText": {
+          "type": "string"
+        },
+        "inferredUsage": {
+          "type": "string",
+          "description": "Heuristic descriptor of how the resource affects perception (primary-font, background-image, hero-image, video-track, etc.)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "AnimationSnapshot": {
+      "type": "object",
+      "description": "Information about a single running or paused animation.",
+      "required": [
+        "id",
+        "type",
+        "playState"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "description": "Animation type (CSSAnimation, CSSTransition, WebAnimation, ScrollTimeline, etc.)."
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "backendNodeId": {
+          "type": "number"
+        },
+        "playState": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "running",
+            "paused",
+            "finished",
+            "cancelled"
+          ]
+        },
+        "startTime": {
+          "type": "number",
+          "description": "Animation start time relative to document timeline (seconds)."
+        },
+        "currentTime": {
+          "type": "number",
+          "description": "Current time position in the animation (seconds)."
+        },
+        "playbackRate": {
+          "type": "number"
+        },
+        "iterationCount": {
+          "description": "Number of iterations or Infinity.",
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "infinite"
+              ]
+            }
+          ]
+        },
+        "direction": {
+          "type": "string"
+        },
+        "fillMode": {
+          "type": "string"
+        },
+        "easing": {
+          "type": "string"
+        },
+        "animatedProperties": {
+          "type": "array",
+          "description": "List of properties being animated.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "MediaSnapshot": {
+      "type": "object",
+      "description": "State of an audio or video element.",
+      "required": [
+        "id",
+        "kind",
+        "nodeId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video"
+          ]
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "backendNodeId": {
+          "type": "number"
+        },
+        "frameId": {
+          "type": "string"
+        },
+        "src": {
+          "type": "string"
+        },
+        "currentTime": {
+          "type": "number"
+        },
+        "duration": {
+          "type": "number"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "muted": {
+          "type": "boolean"
+        },
+        "volume": {
+          "type": "number"
+        },
+        "playbackRate": {
+          "type": "number"
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "readyState": {
+          "type": "integer"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "inViewport": {
+          "type": "boolean",
+          "description": "Whether the media's visible rect intersects the visual viewport."
+        }
+      },
+      "additionalProperties": false
+    },
+    "InteractionSnapshot": {
+      "type": "object",
+      "description": "Derived interaction-related state that influences perception (scroll position, focus, hover).",
+      "properties": {
+        "scrollOffset": {
+          "$ref": "#/definitions/Point"
+        },
+        "focusedNodeId": {
+          "type": "string"
+        },
+        "activeElementNodeId": {
+          "type": "string"
+        },
+        "hoveredNodeId": {
+          "type": "string"
+        },
+        "pointerPositions": {
+          "type": "array",
+          "description": "Pointer positions currently over this frame (e.g. mouse, pen, touch).",
+          "items": {
+            "$ref": "#/definitions/PointerPosition"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PointerPosition": {
+      "type": "object",
+      "required": [
+        "pointerId",
+        "type",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "pointerId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "mouse",
+            "pen",
+            "touch"
+          ]
+        },
+        "x": {
+          "type": "number",
+          "description": "X coordinate in frame CSS pixels."
+        },
+        "y": {
+          "type": "number",
+          "description": "Y coordinate in frame CSS pixels."
+        },
+        "buttons": {
+          "type": "integer",
+          "description": "Active pointer buttons bitfield, if any."
+        }
+      },
+      "additionalProperties": false
+    },
+    "PixelsSnapshot": {
+      "type": "object",
+      "description": "Optional reference to actual pixels captured for the viewport or a region.",
+      "required": [
+        "screenshotId",
+        "mimeType"
+      ],
+      "properties": {
+        "screenshotId": {
+          "type": "string",
+          "description": "Identifier for the screenshot data (e.g., CDP screencast id or external store key)."
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "Image MIME type, e.g. image/png, image/jpeg."
+        },
+        "width": {
+          "type": "number",
+          "description": "Image width in pixels (device pixels)."
+        },
+        "height": {
+          "type": "number",
+          "description": "Image height in pixels (device pixels)."
+        },
+        "clip": {
+          "$ref": "#/definitions/Rect",
+          "description": "Clip rect in CSS pixels if the screenshot is a partial capture of the page."
+        },
+        "hash": {
+          "type": "string",
+          "description": "Optional hash of the image bytes for deduplication/integrity."
+        },
+        "dataRef": {
+          "type": "string",
+          "description": "Opaque reference/URL where the screenshot bytes can be fetched."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Rect": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Size": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Point": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "BoxEdges": {
+      "type": "object",
+      "description": "Top/right/bottom/left edge values, typically in CSS pixels.",
+      "properties": {
+        "top": {
+          "type": "number"
+        },
+        "right": {
+          "type": "number"
+        },
+        "bottom": {
+          "type": "number"
+        },
+        "left": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "BoxModel": {
+      "type": "object",
+      "description": "Box model quads and size for an element.",
+      "required": [
+        "contentQuad",
+        "paddingQuad",
+        "borderQuad",
+        "marginQuad",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "contentQuad": {
+          "$ref": "#/definitions/Quad"
+        },
+        "paddingQuad": {
+          "$ref": "#/definitions/Quad"
+        },
+        "borderQuad": {
+          "$ref": "#/definitions/Quad"
+        },
+        "marginQuad": {
+          "$ref": "#/definitions/Quad"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Quad": {
+      "type": "array",
+      "description": "8-number quad [x1,y1,x2,y2,x3,y3,x4,y4] in CSS pixels.",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 8,
+      "maxItems": 8
+    }
+  }
+}
