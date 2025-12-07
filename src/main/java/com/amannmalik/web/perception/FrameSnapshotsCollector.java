@@ -8,14 +8,19 @@ import jakarta.json.JsonObject;
 import jakarta.json.JsonObjectBuilder;
 import jakarta.json.JsonString;
 import jakarta.json.JsonValue;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 final class FrameSnapshotsCollector {
 
+    private static final Logger LOG = System.getLogger(FrameSnapshotsCollector.class.getName());
     private static final List<String> COMPUTED_STYLE_PROPERTIES = List.of(
         "display",
         "visibility",
@@ -26,10 +31,7 @@ final class FrameSnapshotsCollector {
         "font-size",
         "font-family",
         "font-weight",
-        "font-style",
-        "overflow",
-        "overflow-x",
-        "overflow-y"
+        "font-style"
     );
 
     private final JsonBuilderFactory jsonFactory;
@@ -38,17 +40,35 @@ final class FrameSnapshotsCollector {
         this.jsonFactory = Objects.requireNonNull(jsonFactory, "jsonFactory must not be null");
     }
 
-    Map<String, FrameSnapshots> collect(CdpRequestor requestor) {
-        Objects.requireNonNull(requestor, "requestor must not be null");
-
-        var params = jsonFactory.createObjectBuilder()
+    JsonObject snapshotParams() {
+        return jsonFactory.createObjectBuilder()
             .add("computedStyles", jsonFactory.createArrayBuilder(COMPUTED_STYLE_PROPERTIES))
             .add("includeDOMRects", true)
             .add("includePaintOrder", true)
             .add("includeAuthorShadowDOM", true)
+            .add("includeBlendedBackgroundColors", false)
+            .add("includeTextColorOpacities", false)
             .build();
+    }
 
-        var snapshot = requestor.request("DOMSnapshot.captureSnapshot", params);
+    Map<String, FrameSnapshots> collect(CdpRequestor requestor,
+                                        double devicePixelRatio,
+                                        Map<String, ScrollOffsetCollector.ScrollOffset> scrollOffsets,
+                                        Set<String> allowedFrameIds,
+                                        int maxFrames) {
+        Objects.requireNonNull(requestor, "requestor must not be null");
+        var snapshot = requestor.request("DOMSnapshot.captureSnapshot", snapshotParams());
+        return collect(snapshot, devicePixelRatio, scrollOffsets, allowedFrameIds, maxFrames);
+    }
+
+    Map<String, FrameSnapshots> collect(JsonObject snapshot,
+                                        double devicePixelRatio,
+                                        Map<String, ScrollOffsetCollector.ScrollOffset> scrollOffsets,
+                                        Set<String> allowedFrameIds,
+                                        int maxFrames) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        Objects.requireNonNull(scrollOffsets, "scrollOffsets must not be null");
+
         var stringsArray = snapshot.getJsonArray("strings");
         var documents = snapshot.getJsonArray("documents");
         if (stringsArray == null || documents == null) {
@@ -65,12 +85,38 @@ final class FrameSnapshotsCollector {
             documentFrameIds.add(stringOrEmpty(strings, frameIdIndex));
         }
 
+        var normalizedMaxFrames = maxFrames < 1 ? documents.size() : maxFrames;
+        var allowList = allowedFrameIds == null || allowedFrameIds.isEmpty()
+            ? Set.<String>of()
+            : new HashSet<>(allowedFrameIds);
+        var computedStyleIndex = computedStyleIndices();
+        var processedCount = 0;
+        var truncated = false;
         Map<String, FrameSnapshots> snapshots = new HashMap<>();
         for (var i = 0; i < documents.size(); i++) {
+            if (processedCount >= normalizedMaxFrames) {
+                truncated = true;
+                break;
+            }
             var document = documents.getJsonObject(i);
             var frameId = documentFrameIds.get(i);
-            var frameSnapshots = parseDocumentSnapshot(document, strings, documentFrameIds, frameId);
+            if (!allowList.isEmpty() && !allowList.contains(frameId)) {
+                continue;
+            }
+            var frameSnapshots = parseDocumentSnapshot(
+                document,
+                strings,
+                documentFrameIds,
+                frameId,
+                devicePixelRatio,
+                scrollOffsets.get(frameId),
+                computedStyleIndex
+            );
             snapshots.put(frameId, frameSnapshots);
+            processedCount++;
+        }
+        if (truncated) {
+            LOG.log(Level.INFO, "Truncated frame snapshots at {0} frames (of {1})", normalizedMaxFrames, documents.size());
         }
         return snapshots;
     }
@@ -78,7 +124,10 @@ final class FrameSnapshotsCollector {
     private FrameSnapshots parseDocumentSnapshot(JsonObject document,
                                                 List<String> strings,
                                                 List<String> documentFrameIds,
-                                                String frameId) {
+                                                String frameId,
+                                                double devicePixelRatio,
+                                                ScrollOffsetCollector.ScrollOffset scrollOffset,
+                                                Map<String, Integer> computedStyleIndex) {
         var nodes = document.getJsonObject("nodes");
         if (nodes == null) {
             return FrameSnapshots.EMPTY;
@@ -100,6 +149,7 @@ final class FrameSnapshotsCollector {
         List<String> syntheticNodeIds = new ArrayList<>(nodeCount);
         List<JsonObjectBuilder> nodeBuilders = new ArrayList<>(nodeCount);
         List<List<String>> childLists = new ArrayList<>(nodeCount);
+        var rootIndex = 0;
         for (var i = 0; i < nodeCount; i++) {
             syntheticNodeIds.add("n" + i);
             childLists.add(new ArrayList<>());
@@ -171,14 +221,25 @@ final class FrameSnapshotsCollector {
                 var parentIndex = parentIndexArray.getInt(i, -1);
                 if (parentIndex < 0) {
                     rootNodeId = syntheticNodeIds.get(i);
+                    rootIndex = i;
                     break;
                 }
             }
         }
 
-        var layoutNodes = document.containsKey("layout")
-            ? buildLayoutSnapshot(document.getJsonObject("layout"), syntheticNodeIds, backendNodeIds, frameId, strings)
-            : jsonFactory.createArrayBuilder().build();
+        var layoutParts = document.containsKey("layout")
+            ? buildLayoutSnapshot(
+            document.getJsonObject("layout"),
+            syntheticNodeIds,
+            backendNodeIds,
+            frameId,
+            strings,
+            devicePixelRatio,
+            computedStyleIndex)
+            : LayoutSnapshotParts.empty();
+        layoutParts.applyScrollOffset(rootIndex, scrollOffset, jsonFactory);
+        var layoutNodes = jsonFactory.createArrayBuilder();
+        layoutParts.layoutNodes().forEach(builder -> layoutNodes.add(builder.build()));
         var layoutSnapshot = jsonFactory.createObjectBuilder()
             .add("layoutNodes", layoutNodes)
             .build();
@@ -198,14 +259,17 @@ final class FrameSnapshotsCollector {
             .add("rootNodeId", rootNodeId)
             .build();
 
-        return new FrameSnapshots(domSnapshot, layoutSnapshot, styleSnapshot);
+        var interactions = interactions(scrollOffset);
+        return new FrameSnapshots(domSnapshot, layoutSnapshot, styleSnapshot, interactions);
     }
 
-    private JsonArray buildLayoutSnapshot(JsonObject layout,
-                                          List<String> nodeIds,
-                                          JsonArray backendNodeIds,
-                                          String frameId,
-                                          List<String> strings) {
+    private LayoutSnapshotParts buildLayoutSnapshot(JsonObject layout,
+                                                    List<String> nodeIds,
+                                                    JsonArray backendNodeIds,
+                                                    String frameId,
+                                                    List<String> strings,
+                                                    double devicePixelRatio,
+                                                    Map<String, Integer> computedStyleIndex) {
         var nodeIndex = layout.getJsonArray("nodeIndex");
         var bounds = layout.getJsonArray("bounds");
         var styles = layout.getJsonArray("styles");
@@ -215,9 +279,15 @@ final class FrameSnapshotsCollector {
         var stackingContexts = rareBooleanMap(layout, "stackingContexts");
         var paintOrders = layout.getJsonArray("paintOrders");
 
-        var layoutNodes = jsonFactory.createArrayBuilder();
+        var normalizedScale = devicePixelRatio <= 0.0 ? 1.0 : devicePixelRatio;
+        var displayIdx = computedStyleIndex.getOrDefault("display", -1);
+        var opacityIdx = computedStyleIndex.getOrDefault("opacity", -1);
+
+        List<JsonObjectBuilder> layoutNodes = new ArrayList<>(nodeIndex.size());
+        Map<Integer, Integer> layoutIndexBySnapshotIndex = new HashMap<>(nodeIndex.size());
         for (var i = 0; i < nodeIndex.size(); i++) {
             var nodeIdx = nodeIndex.getInt(i);
+            layoutIndexBySnapshotIndex.put(nodeIdx, i);
             var nodeId = nodeIds.get(nodeIdx);
             var backendId = backendNodeIds.getJsonNumber(nodeIdx).longValue();
 
@@ -227,7 +297,7 @@ final class FrameSnapshotsCollector {
             var width = rect.getJsonNumber(2).doubleValue();
             var height = rect.getJsonNumber(3).doubleValue();
 
-            var boxModel = buildBoxModel(x, y, width, height);
+            var boxModel = buildBoxModel(x, y, width, height, normalizedScale);
             var layoutNode = jsonFactory.createObjectBuilder()
                 .add("nodeId", nodeId)
                 .add("backendNodeId", backendId)
@@ -237,19 +307,19 @@ final class FrameSnapshotsCollector {
             if (clientRects != null && clientRects.size() > i) {
                 var clientRect = clientRects.getJsonArray(i);
                 if (hasRectCoordinates(clientRect)) {
-                    layoutNode.add("clientRect", toRect(clientRect));
+                    layoutNode.add("clientRect", toRect(clientRect, normalizedScale));
                 }
             }
             if (scrollRects != null && scrollRects.size() > i) {
                 var scrollRect = scrollRects.getJsonArray(i);
                 if (hasRectCoordinates(scrollRect)) {
-                    layoutNode.add("scrollRect", toRect(scrollRect));
+                    layoutNode.add("scrollRect", toRect(scrollRect, normalizedScale));
                 }
             }
             if (offsetRects != null && offsetRects.size() > i) {
                 var offsetRect = offsetRects.getJsonArray(i);
                 if (hasRectCoordinates(offsetRect)) {
-                    layoutNode.add("offsetRect", toRect(offsetRect));
+                    layoutNode.add("offsetRect", toRect(offsetRect, normalizedScale));
                 }
             }
             if (stackingContexts.getOrDefault(i, false)) {
@@ -260,14 +330,12 @@ final class FrameSnapshotsCollector {
             }
             if (styles != null && styles.size() > i) {
                 var styleIndices = styles.getJsonArray(i);
-                var displayIdx = COMPUTED_STYLE_PROPERTIES.indexOf("display");
                 if (displayIdx >= 0 && displayIdx < styleIndices.size()) {
                     var display = stringAt(strings, styleIndices.getInt(displayIdx, -1));
                     if (display != null) {
                         layoutNode.add("displayType", display);
                     }
                 }
-                var opacityIdx = COMPUTED_STYLE_PROPERTIES.indexOf("opacity");
                 if (opacityIdx >= 0 && opacityIdx < styleIndices.size()) {
                     var opacity = stringAt(strings, styleIndices.getInt(opacityIdx, -1));
                     if (opacity != null) {
@@ -280,15 +348,19 @@ final class FrameSnapshotsCollector {
                 }
             }
 
-            layoutNodes.add(layoutNode.build());
+            layoutNodes.add(layoutNode);
         }
-        return layoutNodes.build();
+        return new LayoutSnapshotParts(layoutNodes, layoutIndexBySnapshotIndex);
     }
 
-    private JsonObject buildBoxModel(double x, double y, double width, double height) {
-        var x2 = x + width;
-        var y2 = y + height;
-        var quad = List.of(x, y, x2, y, x2, y2, x, y2);
+    private JsonObject buildBoxModel(double x, double y, double width, double height, double devicePixelRatio) {
+        var cssX = x / devicePixelRatio;
+        var cssY = y / devicePixelRatio;
+        var cssWidth = width / devicePixelRatio;
+        var cssHeight = height / devicePixelRatio;
+        var x2 = cssX + cssWidth;
+        var y2 = cssY + cssHeight;
+        var quad = List.of(cssX, cssY, x2, cssY, x2, y2, cssX, y2);
 
         var quadBuilder = jsonFactory.createArrayBuilder();
         quad.forEach(quadBuilder::add);
@@ -298,8 +370,8 @@ final class FrameSnapshotsCollector {
             .add("paddingQuad", quadBuilder)
             .add("borderQuad", quadBuilder)
             .add("marginQuad", quadBuilder)
-            .add("width", width)
-            .add("height", height)
+            .add("width", cssWidth)
+            .add("height", cssHeight)
             .build();
     }
 
@@ -307,15 +379,16 @@ final class FrameSnapshotsCollector {
         return rectArray != null && rectArray.size() >= 4;
     }
 
-    private JsonObject toRect(JsonArray rectArray) {
+    private JsonObject toRect(JsonArray rectArray, double devicePixelRatio) {
         if (!hasRectCoordinates(rectArray)) {
             return jsonFactory.createObjectBuilder().build();
         }
+        var scale = devicePixelRatio <= 0.0 ? 1.0 : devicePixelRatio;
         return jsonFactory.createObjectBuilder()
-            .add("x", rectArray.getJsonNumber(0).doubleValue())
-            .add("y", rectArray.getJsonNumber(1).doubleValue())
-            .add("width", rectArray.getJsonNumber(2).doubleValue())
-            .add("height", rectArray.getJsonNumber(3).doubleValue())
+            .add("x", rectArray.getJsonNumber(0).doubleValue() / scale)
+            .add("y", rectArray.getJsonNumber(1).doubleValue() / scale)
+            .add("width", rectArray.getJsonNumber(2).doubleValue() / scale)
+            .add("height", rectArray.getJsonNumber(3).doubleValue() / scale)
             .build();
     }
 
@@ -344,6 +417,23 @@ final class FrameSnapshotsCollector {
             styleNodes.add(styleNode);
         }
         return styleNodes.build();
+    }
+
+    private Map<String, Integer> computedStyleIndices() {
+        Map<String, Integer> index = new HashMap<>(COMPUTED_STYLE_PROPERTIES.size());
+        for (var i = 0; i < COMPUTED_STYLE_PROPERTIES.size(); i++) {
+            index.put(COMPUTED_STYLE_PROPERTIES.get(i), i);
+        }
+        return index;
+    }
+
+    private JsonObject interactions(ScrollOffsetCollector.ScrollOffset scrollOffset) {
+        if (scrollOffset == null) {
+            return jsonFactory.createObjectBuilder().build();
+        }
+        return jsonFactory.createObjectBuilder()
+            .add("scrollOffset", scrollOffset.toJson(jsonFactory))
+            .build();
     }
 
     private String stringAt(List<String> strings, int index) {
@@ -412,13 +502,36 @@ final class FrameSnapshotsCollector {
         return map;
     }
 
+    private record LayoutSnapshotParts(List<JsonObjectBuilder> layoutNodes,
+                                       Map<Integer, Integer> layoutIndexBySnapshotIndex) {
+
+        static LayoutSnapshotParts empty() {
+            return new LayoutSnapshotParts(List.of(), Map.of());
+        }
+
+        void applyScrollOffset(int rootSnapshotIndex,
+                               ScrollOffsetCollector.ScrollOffset scrollOffset,
+                               JsonBuilderFactory factory) {
+            if (scrollOffset == null || layoutNodes.isEmpty()) {
+                return;
+            }
+            var layoutIndex = layoutIndexBySnapshotIndex.getOrDefault(rootSnapshotIndex, -1);
+            if (layoutIndex < 0 || layoutIndex >= layoutNodes.size()) {
+                return;
+            }
+            layoutNodes.get(layoutIndex).add("scrollOffset", scrollOffset.toJson(factory));
+        }
+    }
+
     record FrameSnapshots(JsonObject domSnapshot,
                           JsonObject layoutSnapshot,
-                          JsonObject styleSnapshot) {
+                          JsonObject styleSnapshot,
+                          JsonObject interactions) {
         static final FrameSnapshots EMPTY = new FrameSnapshots(
             Json.createObjectBuilder().add("nodes", Json.createArrayBuilder()).build(),
             Json.createObjectBuilder().add("layoutNodes", Json.createArrayBuilder()).build(),
-            Json.createObjectBuilder().add("nodes", Json.createArrayBuilder()).build()
+            Json.createObjectBuilder().add("nodes", Json.createArrayBuilder()).build(),
+            Json.createObjectBuilder().build()
         );
     }
 }
