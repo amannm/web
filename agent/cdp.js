@@ -1,7 +1,7 @@
 import {chromium} from "./chromium.js";
 import {WebSocket} from "ws";
 
-const CALL_TIMEOUT_MS = Number(process.env.CDP_CALL_TIMEOUT_MS ?? 10_000);
+const CALL_TIMEOUT_MS = 10_000;
 
 export async function launchChromiumWithCdp({port = 9222, headless = false} = {}) {
     const browser = await chromium.launch({headless, args: [`--remote-debugging-port=${port}`]});
@@ -169,10 +169,8 @@ export async function connectToNewPage(port = 9222, {maxAttempts = 100, delayMs 
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-    const portEnv = process.env.CDP_PORT;
-    const headlessEnv = process.env.CDP_HEADLESS;
-    const port = portEnv ? Number(portEnv) : 9222;
-    const headless = headlessEnv === "1" || headlessEnv === "true";
+    const port = 9_222;
+    const headless = false;
     launchChromiumWithCdp({port, headless})
         .then(async ({browser, port}) => {
             const client = await connectToNewPage(port);

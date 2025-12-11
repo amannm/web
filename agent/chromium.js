@@ -8,7 +8,7 @@ import {spawn} from "node:child_process";
 import {createHash} from "node:crypto";
 import extract from "./extract.js";
 
-const CDP_READY_TIMEOUT_MS = Number(process.env.CDP_READY_TIMEOUT_MS ?? 45_000);
+const CDP_READY_TIMEOUT_MS = 45_000;
 const FALLBACK_VERSION = "143.0.7499.42"; // Used if remote lookup fails.
 const CHROME_FOR_TESTING_BASE = "https://storage.googleapis.com/chrome-for-testing-public";
 const KNOWN_DIGESTS = {
@@ -75,12 +75,6 @@ function platformSpec() {
 }
 
 function resolveCacheDir(version) {
-    if (process.env.CHROME_FOR_TESTING_CACHE) {
-        return process.env.CHROME_FOR_TESTING_CACHE;
-    }
-    if (process.env.PLAYWRIGHT_CDP_CHROMIUM_CACHE) {
-        return process.env.PLAYWRIGHT_CDP_CHROMIUM_CACHE;
-    }
     return path.join(os.homedir(), ".cache", "chrome-for-testing", version);
 }
 
@@ -192,10 +186,6 @@ async function resolveChromeVersion() {
     if (resolvedVersionCache) {
         return resolvedVersionCache;
     }
-    if (process.env.CHROME_FOR_TESTING_VERSION) {
-        resolvedVersionCache = process.env.CHROME_FOR_TESTING_VERSION;
-        return resolvedVersionCache;
-    }
     try {
         resolvedVersionCache = await fetchLatestVersion("Stable");
         return resolvedVersionCache;
@@ -295,7 +285,7 @@ async function launch({headless = true, args = []} = {}) {
     } else {
         finalArgs.push("--disable-infobars");
     }
-    const suppressNoise = process.env.CHROME_SUPPRESS_NOISE !== "0";
+    const suppressNoise = true;
     if (suppressNoise) {
         finalArgs.push(
             "--disable-features=PushMessaging",

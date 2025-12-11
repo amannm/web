@@ -4,15 +4,16 @@ import Anthropic from "@anthropic-ai/sdk";
 import {connectToNewPage, launchChromiumWithCdp} from "./cdp.js";
 
 const MAX_TOOL_PAYLOAD_CHARS = 8_000;
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-5-20251101";
-const MAX_MODEL_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS ?? 1_024);
-const parsedPort = Number(process.env.CDP_PORT ?? process.env.CHROME_REMOTE_DEBUG_PORT ?? 9222);
-if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65_535) {
-    throw new Error(`Invalid CDP port: ${process.env.CDP_PORT ?? process.env.CHROME_REMOTE_DEBUG_PORT}`);
+const MODEL = "claude-opus-4-5-20251101";
+const MAX_MODEL_TOKENS = 1_024;
+const CDP_PORT = 9_222;
+const CDP_HEADLESS = false;
+const args = process.argv.slice(2);
+const debugFlagIndex = args.indexOf("--debug");
+const TRACE = debugFlagIndex >= 0;
+if (debugFlagIndex >= 0) {
+    args.splice(debugFlagIndex, 1);
 }
-const CDP_PORT = parsedPort;
-const CDP_HEADLESS = process.env.CDP_HEADLESS === "1" || process.env.CDP_HEADLESS === "true";
-const TRACE = process.env.AGENT_TRACE === "1";
 
 const color = {
     blue: (s) => `\u001b[34m${s}\u001b[0m`,
@@ -139,7 +140,7 @@ async function runCdpCommand(client, args) {
 async function runAgent(rawUserText) {
     const userText = rawUserText?.trim() || "Open https://example.com, wait for it to load, grab document.title and tell me what it is.";
     const chrome = await connectChrome();
-    const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web.";
+    const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web. Try to stay token-efficient.";
     const messages = [{role: "user", content: [{type: "text", text: userText}]}];
     try {
         for (let round = 0; ; round += 1) {
@@ -193,7 +194,7 @@ async function runAgent(rawUserText) {
     }
 }
 
-const userText = process.argv.slice(2).join(" ");
+const userText = args.join(" ");
 runAgent(userText).catch(err => {
     console.error(err);
     process.exit(1);
