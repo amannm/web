@@ -51,6 +51,7 @@ final class FrameAssembler {
             .add("styles", snapshots.styleSnapshot())
             .add("layers", emptyLayerSnapshot())
             .add("accessibilityTree", accessibilitySnapshots.getOrDefault(frameId, emptyAccessibilitySnapshot()))
+            .add("interactions", snapshots.interactions())
             .add("isMainFrame", parentFrameId == null);
 
         if (parentFrameId != null) {

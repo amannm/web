@@ -4,6 +4,7 @@ import jakarta.json.JsonBuilderFactory;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonObjectBuilder;
 import jakarta.json.JsonValue;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 
@@ -37,6 +38,9 @@ final class DeviceStateCollector {
         })()
         """;
 
+    private static final int RETRIES = 3;
+    private static final Duration RETRY_DELAY = Duration.ofMillis(150);
+
     private final JsonBuilderFactory jsonFactory;
 
     DeviceStateCollector(JsonBuilderFactory jsonFactory) {
@@ -52,7 +56,7 @@ final class DeviceStateCollector {
             .add("awaitPromise", true)
             .build();
 
-        var result = requestor.request("Runtime.evaluate", params);
+        var result = requestor.requestWithRetries("Runtime.evaluate", params, RETRIES, RETRY_DELAY);
         var runtimeResult = result.getJsonObject("result");
         var value = runtimeResult != null ? runtimeResult.get("value") : null;
         if (value == null || value.getValueType() != JsonValue.ValueType.OBJECT) {

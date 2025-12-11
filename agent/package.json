@@ -1,0 +1,17 @@
+{
+  "name": "agent",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "agent.js",
+  "bin": {
+    "agent": "agent.js"
+  },
+  "scripts": {
+    "start": "node agent.js",
+    "verify": "node agent.js \"Open https://example.com and report document.title\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "ws": "^8.18.3"
+  }
+}

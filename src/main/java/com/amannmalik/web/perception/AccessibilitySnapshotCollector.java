@@ -1,5 +1,6 @@
 package com.amannmalik.web.perception;
 
+import jakarta.json.JsonArray;
 import jakarta.json.JsonBuilderFactory;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonObjectBuilder;
@@ -10,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 final class AccessibilitySnapshotCollector {
 
@@ -20,10 +22,30 @@ final class AccessibilitySnapshotCollector {
     }
 
     Map<String, JsonObject> collect(CdpRequestor requestor) {
+        return collect(requestor, Set.of());
+    }
+
+    Map<String, JsonObject> collect(CdpRequestor requestor, Set<String> allowedFrameIds) {
         Objects.requireNonNull(requestor, "requestor must not be null");
+        var allowList = allowedFrameIds == null || allowedFrameIds.isEmpty()
+            ? Set.<String>of()
+            : allowedFrameIds;
 
         var accessibility = requestor.request("Accessibility.getFullAXTree");
         var nodes = accessibility.getJsonArray("nodes");
+        return parseAccessibility(nodes, allowList);
+    }
+
+    Map<String, JsonObject> collectFromSnapshot(JsonObject accessibility, Set<String> allowedFrameIds) {
+        Objects.requireNonNull(accessibility, "accessibility must not be null");
+        var allowList = allowedFrameIds == null || allowedFrameIds.isEmpty()
+            ? Set.<String>of()
+            : allowedFrameIds;
+        var nodes = accessibility.getJsonArray("nodes");
+        return parseAccessibility(nodes, allowList);
+    }
+
+    private Map<String, JsonObject> parseAccessibility(JsonArray nodes, Set<String> allowList) {
         if (nodes == null) {
             return Map.of();
         }
@@ -35,6 +57,9 @@ final class AccessibilitySnapshotCollector {
             var axId = node.getString("nodeId", "");
             var frameId = node.getString("frameId", "");
             if (frameId.isBlank() || axId.isBlank()) {
+                continue;
+            }
+            if (!allowList.isEmpty() && !allowList.contains(frameId)) {
                 continue;
             }
 

@@ -144,13 +144,12 @@ public final class CdpWebSocketClient implements CdpClient, WebSocket.Listener {
             .add("method", command.method())
             .add("params", command.params())
             .build();
-        webSocket.sendText(payload.toString(), true)
-            .whenComplete((ws, error) -> {
-                if (error != null) {
-                    pending.remove(id);
-                    future.completeExceptionally(error);
-                }
-            });
+        try {
+            webSocket.sendText(payload.toString(), true).join();
+        } catch (RuntimeException error) {
+            pending.remove(id);
+            future.completeExceptionally(error);
+        }
         return future;
     }
 

@@ -2,3 +2,4 @@
 build
 .gradle
 reference/*/*
+node_modules

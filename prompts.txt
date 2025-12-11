@@ -1,0 +1,100 @@
+Explain how byte pair encoding (BPE) tokenization works in simple terms.
+Write a humorous haiku about large language models getting rate limited.
+Summarize the main differences between supervised and unsupervised learning.
+Generate a short motivational message for a team starting a new project.
+Translate this sentence into French: The quick brown fox jumps over the lazy dog.
+Give me three creative startup ideas in the developer tooling space.
+Explain the concept of overfitting in machine learning using a real-world analogy.
+Write a Python function that reverses a string without using built-in reverse.
+Provide a brief overview of the history of the internet in 5 bullet points.
+Draft a polite email asking for an extension on a project deadline.
+Explain what a REST API is and how it differs from a GraphQL API.
+Generate a list of ten fun, low-cost team-building activities for remote teams.
+Write a short story about an AI assistant that becomes obsessed with counting tokens.
+Explain the difference between synchronous and asynchronous programming.
+Give me a one-paragraph summary of the concept of technical debt.
+Suggest five creative names for a CLI tool that estimates token usage.
+Explain how HTTP status codes work and list five common ones with explanations.
+Draft a short product description for a fictional AI-powered note-taking app.
+Write a SQL query to select all users created in the last 7 days.
+Explain the difference between CPU-bound and IO-bound tasks.
+Describe how you would design a simple rate limiter for an API.
+Write a brief explanation of what a hash function is and where it is used.
+Provide a simple explanation of containerization and Docker.
+Write a short poem about debugging code at 2 a.m.
+Explain how version control with Git works and why it is useful.
+Generate five example log lines from a web server handling HTTP requests.
+Explain what idempotency means in the context of web APIs.
+Write a JSON object representing a simple user profile with nested fields.
+Describe the main steps of a typical machine learning workflow.
+Write a bash one-liner to count the number of lines in all .py files in a directory.
+Explain what a context window is in large language models.
+Generate three different prompts to ask an AI to help debug a Python error.
+Write a short tutorial-style explanation of Python list comprehensions.
+Describe the pros and cons of using microservices vs a monolithic architecture.
+Generate a markdown-formatted README introduction for a token-estimator project.
+Explain the difference between strong typing and weak typing in programming languages.
+Create five example prompts for an AI that writes unit tests for code.
+Write a brief explanation of what latency is in distributed systems.
+Describe how caching can improve performance in web applications.
+Write a short fictional conversation between a developer and an AI code assistant.
+Explain the purpose of environment variables and how to use them securely.
+Generate ten example English sentences of varying length to test tokenization.
+Explain the concept of exponential backoff in retry strategies.
+Draft a short changelog entry describing the addition of a token estimation feature.
+Write a Python snippet that sends a POST request using the requests library.
+Explain what a message queue is and why it might be used in an architecture.
+Summarize the differences between SQL and NoSQL databases.
+Generate five example error messages that a token estimation script might produce.
+Describe how you would log and monitor token usage in a production system.
+Write a short explanation of the CAP theorem with an example.
+Generate a set of five prompts that include emojis to test non-ASCII tokenization.
+Explain what UTF-8 encoding is and why it is widely used.
+Write a short guide on how to safely handle API keys in a project.
+Create ten simple arithmetic word problems to test numeric tokenization.
+Explain what a regression model is and give a real-world use case.
+Write a brief comparison of Python and JavaScript for backend development.
+Generate a short FAQ section about using a local token estimator.
+Explain the concept of feature engineering in machine learning.
+Draft a short description of a monitoring dashboard for API performance.
+Write a TypeScript interface for a TokenEstimationResult object.
+Explain how pagination works in APIs and why it is necessary.
+Generate five prompts that contain code blocks for tokenization experiments.
+Write a short explanation of the difference between JSON and YAML.
+Describe how rate limits are typically communicated in API responses.
+Generate a markdown table with three example models and their context window sizes.
+Explain what a confusion matrix is in the context of classification.
+Write a short description of why reproducibility matters in data science.
+Generate five prompts that mix English and another language in the same sentence.
+Explain what an embedding is in the context of machine learning.
+Write a bash script snippet that reads lines from stdin and prints them numbered.
+Describe how you would design a CLI UX for estimating tokens in a file.
+Generate five prompts that are intentionally very short (1–3 words each).
+Explain the trade-offs between accuracy and speed in token estimation.
+Write a paragraph explaining the importance of logging in production systems.
+Create five prompts that look like realistic chat messages between users.
+Explain how batching requests can improve throughput in an API client.
+Generate a pseudo-JSON log line with nested fields and a timestamp.
+Write a short description of what “idempotent retries” means in practice.
+Explain what a gradient boosting model is at a high level.
+Generate five prompts that include URLs, query parameters, and fragments.
+Write a short explanation of the difference between latency and throughput.
+Describe how you would evaluate whether a token estimator is “good enough.”
+Generate a set of five prompts that are long paragraphs (150–300 words each).
+Explain what a random seed is and why it matters for reproducibility.
+Write a brief explanation of A/B testing in the context of API changes.
+Generate five prompts that include lists, bullet points, or numbered items.
+Explain how you might compress logs of token usage without losing important info.
+Write a paragraph about the ethical considerations of logging user prompts.
+Generate a JSON array of three example error objects for an API.
+Explain what MAE (mean absolute error) and relative MAE are in simple terms.
+Write a short guide on how to interpret evaluation metrics for a regression model.
+Generate five prompts that heavily use numbers and dates (e.g., logs or metrics).
+Explain what overfitting is and how to detect it using train/test metrics.
+Write a short explanation of why you might prefer a simpler model over a complex one.
+Generate five prompts that resemble configuration files (YAML or JSON style).
+Explain how tokenization of CJK (Chinese, Japanese, Korean) text can differ from English.
+Write a paragraph that densely mixes natural language, code, and symbols.
+Generate five prompts that are designed to stress-test emoji and special characters.
+Explain why it can be useful to approximate token counts locally instead of calling an API.
+Write a closing paragraph for a README thanking users for trying the token estimator tool.
