@@ -6,7 +6,21 @@ import https from "node:https";
 import http from "node:http";
 import {spawn} from "node:child_process";
 import {createHash} from "node:crypto";
-import extract from "./extract.js";
+
+function spawnAndWait(command, args, options = {}) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(command, args, {stdio: "inherit", ...options});
+        child.once("error", reject);
+        child.once("exit", (code, signal) => {
+            if (code === 0) {
+                resolve();
+                return;
+            }
+            const reason = signal ? `signal ${signal}` : `exit code ${code}`;
+            reject(new Error(`Command failed: ${command} ${args.join(" ")} (${reason})`));
+        });
+    });
+}
 
 const CDP_READY_TIMEOUT_MS = 45_000;
 const FALLBACK_VERSION = "143.0.7499.42"; // Used if remote lookup fails.
@@ -112,6 +126,57 @@ function downloadFile(url, destPath) {
             reject(err);
         });
     });
+}
+
+async function extractZipWithUnzip(archivePath, dir) {
+    await spawnAndWait("unzip", ["-q", archivePath, "-d", dir]);
+}
+
+async function extractZipWithTar(archivePath, dir) {
+    await spawnAndWait("tar", ["-xf", archivePath, "-C", dir]);
+}
+
+function escapeForPwshLiteral(str) {
+    return str.replace(/'/g, "''");
+}
+
+async function extractZipWithPowerShell(archivePath, dir) {
+    const literalArchive = escapeForPwshLiteral(archivePath);
+    const literalDir = escapeForPwshLiteral(dir);
+    const command = `Expand-Archive -LiteralPath '${literalArchive}' -DestinationPath '${literalDir}' -Force`;
+    await spawnAndWait("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]);
+}
+
+async function extractArchive(archivePath, dir) {
+    if (!archivePath) {
+        throw new Error("extractArchive: archivePath is required");
+    }
+    if (!dir) {
+        throw new Error("extractArchive: dir is required");
+    }
+    await fsPromises.mkdir(dir, {recursive: true});
+    const platform = process.platform;
+    if (platform === "win32") {
+        try {
+            await extractZipWithPowerShell(archivePath, dir);
+            return;
+        } catch (error) {
+            throw new Error(
+                `Failed to extract archive on Windows using PowerShell: ${error.message}`
+            );
+        }
+    }
+    try {
+        await extractZipWithUnzip(archivePath, dir);
+    } catch (unzipError) {
+        try {
+            await extractZipWithTar(archivePath, dir);
+        } catch (tarError) {
+            const error = new Error("Failed to extract archive: neither 'unzip' nor 'tar' succeeded");
+            error.cause = {unzipError, tarError};
+            throw error;
+        }
+    }
 }
 
 function fetchRemoteDigest(url) {
@@ -221,7 +286,7 @@ async function ensureChromiumDownloaded() {
             throw new Error(`Checksum verification failed for ${archiveName}`);
         }
     }
-    await extract(archivePath, {dir: cacheDir});
+    await extractArchive(archivePath, cacheDir);
     await fsPromises.access(executablePath, fs.constants.X_OK);
     return executablePath;
 }
