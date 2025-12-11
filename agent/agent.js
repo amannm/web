@@ -140,7 +140,7 @@ async function runCdpCommand(client, args) {
 async function runAgent(rawUserText) {
     const userText = rawUserText?.trim() || "Open https://example.com, wait for it to load, grab document.title and tell me what it is.";
     const chrome = await connectChrome();
-    const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web. Try to stay token-efficient.";
+    const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web. Stay token-efficient.";
     const messages = [{role: "user", content: [{type: "text", text: userText}]}];
     try {
         for (let round = 0; ; round += 1) {
