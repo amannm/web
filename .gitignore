@@ -3,3 +3,4 @@ build
 .gradle
 reference/*/*
 node_modules
+pnpm-lock.yaml
