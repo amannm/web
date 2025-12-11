@@ -8,6 +8,7 @@ import {spawn} from "node:child_process";
 import {createHash} from "node:crypto";
 import extract from "./extract.js";
 
+const CDP_READY_TIMEOUT_MS = Number(process.env.CDP_READY_TIMEOUT_MS ?? 45_000);
 const FALLBACK_VERSION = "143.0.7499.42"; // Used if remote lookup fails.
 const CHROME_FOR_TESTING_BASE = "https://storage.googleapis.com/chrome-for-testing-public";
 const KNOWN_DIGESTS = {
@@ -99,11 +100,7 @@ function downloadFile(url, destPath) {
                         // ignore unlink errors
                     });
                 });
-                reject(
-                    new Error(
-                        `Unexpected HTTP ${response.statusCode} while downloading ${url}`
-                    )
-                );
+                reject(new Error(`Unexpected HTTP ${response.statusCode} while downloading ${url}`));
                 response.resume();
                 return;
             }
@@ -220,7 +217,6 @@ async function ensureChromiumDownloaded() {
     } catch {
         // fall through and download
     }
-
     ensureDirSync(cacheDir);
     const downloadUrl = `${CHROME_FOR_TESTING_BASE}/${version}/${platformPath}/${archiveName}`;
     try {
@@ -240,7 +236,6 @@ async function ensureChromiumDownloaded() {
     return executablePath;
 }
 
-const CDP_READY_TIMEOUT_MS = Number(process.env.CDP_READY_TIMEOUT_MS ?? 45_000);
 
 async function waitForCdpEndpoint(port, {attempts = Math.ceil(CDP_READY_TIMEOUT_MS / 200), delayMs = 200} = {}) {
     for (let i = 0; i < attempts; i += 1) {

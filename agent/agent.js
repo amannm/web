@@ -127,7 +127,7 @@ async function runCdpCommand(client, args) {
     const methodName = method?.includes(".") ? method : `${domain}.${method}`;
     logSend(methodName, JSON.stringify(params));
     try {
-        const result = await client.callRaw(methodName, params);
+        const result = await client.call(methodName, params);
         logRecv(methodName, JSON.stringify(result), true);
         return result;
     } catch (err) {
@@ -184,7 +184,6 @@ async function runAgent(rawUserText) {
                 console.log(texts);
             }
         }
-        throw new Error(`Conversation exceeded safe turn limit of ${MAX_TURNS}`);
     } finally {
         try {
             await chrome.close();

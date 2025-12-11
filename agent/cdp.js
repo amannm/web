@@ -23,12 +23,10 @@ function createCdpClient(webSocketUrl) {
     let nextId = 0;
     const pending = new Map();
     const listeners = new Map();
-
     const ready = new Promise((resolve, reject) => {
         socket.addEventListener("open", () => resolve(), {once: true});
         socket.addEventListener("error", (err) => reject(err), {once: true});
     });
-
     socket.addEventListener("message", (event) => {
         try {
             const message = JSON.parse(event.data);
@@ -76,7 +74,6 @@ function createCdpClient(webSocketUrl) {
             // Ignore malformed messages; CDP should always send JSON
         }
     });
-
     const rejectAll = (err) => {
         pending.forEach(({reject, timer}) => {
             clearTimeout(timer);
@@ -84,10 +81,8 @@ function createCdpClient(webSocketUrl) {
         });
         pending.clear();
     };
-
     socket.addEventListener("error", rejectAll);
     socket.addEventListener("close", () => rejectAll(new Error("CDP socket closed")));
-
     function call(method, params = {}) {
         if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
             return Promise.reject(new Error(`CDP socket is not open for ${method}`));
@@ -102,20 +97,17 @@ function createCdpClient(webSocketUrl) {
             socket.send(JSON.stringify({id, method, params}));
         }));
     }
-
     const domain = (name) => new Proxy({}, {
         get(_, prop) {
             return (params) => call(`${name}.${String(prop)}`, params);
         }
     });
-
     const on = (eventName, handler) => {
         const list = listeners.get(eventName) ?? [];
         list.push(handler);
         listeners.set(eventName, list);
         return () => listeners.set(eventName, list.filter((h) => h !== handler));
     };
-
     const close = () => new Promise((resolve) => {
         const done = () => resolve();
         socket.addEventListener("close", done, {once: true});
@@ -126,10 +118,9 @@ function createCdpClient(webSocketUrl) {
             resolve();
         }
     });
-
     return {
         on,
-        callRaw: call,
+        call: call,
         Page: domain("Page"),
         Runtime: domain("Runtime"),
         Browser: domain("Browser"),
@@ -159,9 +150,7 @@ export async function connectToNewPage(port = 9222, {maxAttempts = 100, delayMs 
             } catch (error) {
                 if (error instanceof Error && error.message.startsWith("HTTP 405")) {
                     const targets = await fetchJson(`http://127.0.0.1:${port}/json/list`);
-                    const firstTarget = Array.isArray(targets)
-                        ? targets.find((t) => Boolean(extractWsUrl(t)))
-                        : undefined;
+                    const firstTarget = Array.isArray(targets) ? targets.find((t) => Boolean(extractWsUrl(t))) : undefined;
                     const firstWsUrl = extractWsUrl(firstTarget);
                     if (firstWsUrl) {
                         return createCdpClient(firstWsUrl);
@@ -184,18 +173,20 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const headlessEnv = process.env.CDP_HEADLESS;
     const port = portEnv ? Number(portEnv) : 9222;
     const headless = headlessEnv === "1" || headlessEnv === "true";
-    launchChromiumWithCdp({port, headless}).then(async ({browser, port}) => {
-        const client = await connectToNewPage(port);
-        await client.Page.enable();
-        console.log(`chromium listening for CDP on ${port}`);
-        const shutdown = () => {
-            Promise.allSettled([client.close(), browser.close()])
-                .finally(() => process.exit(0));
-        };
-        process.on("SIGINT", shutdown);
-        process.on("SIGTERM", shutdown);
-    }).catch(err => {
-        console.error(err);
-        process.exit(1);
-    });
+    launchChromiumWithCdp({port, headless})
+        .then(async ({browser, port}) => {
+            const client = await connectToNewPage(port);
+            await client.Page.enable();
+            console.log(`chromium listening for CDP on ${port}`);
+            const shutdown = () => {
+                Promise.allSettled([client.close(), browser.close()])
+                    .finally(() => process.exit(0));
+            };
+            process.on("SIGINT", shutdown);
+            process.on("SIGTERM", shutdown);
+        })
+        .catch(err => {
+            console.error(err);
+            process.exit(1);
+        });
 }
