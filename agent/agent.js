@@ -74,7 +74,6 @@ function toMessageParamContent(blocks) {
 
 async function connectChrome() {
     const port = CDP_PORT;
-    // Reuse existing Chrome if already listening to avoid port collisions and GUI requirements.
     try {
         const client = await connectToNewPage(port, {maxAttempts: 10, delayMs: 100});
         const {Page, Runtime} = client;
