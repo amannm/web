@@ -321,7 +321,6 @@ async function launch({headless = true, args = []} = {}) {
         const abort = (err) => {
             if (settled) return;
             settled = true;
-            // Ensure the child process is torn down before propagating the error.
             browser.close().catch(() => {
             }).finally(() => reject(err));
         };

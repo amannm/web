@@ -1,7 +1,7 @@
 import {chromium} from "./chromium.js";
 import {WebSocket} from "ws";
 
-const CALL_TIMEOUT_MS = 10_000;
+const CALL_TIMEOUT_MS = Number(process.env.CDP_CALL_TIMEOUT_MS ?? 10_000);
 
 export async function launchChromiumWithCdp({port = 9222, headless = false} = {}) {
     const browser = await chromium.launch({headless, args: [`--remote-debugging-port=${port}`]});
@@ -89,6 +89,9 @@ function createCdpClient(webSocketUrl) {
     socket.addEventListener("close", () => rejectAll(new Error("CDP socket closed")));
 
     function call(method, params = {}) {
+        if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
+            return Promise.reject(new Error(`CDP socket is not open for ${method}`));
+        }
         return ready.then(() => new Promise((resolve, reject) => {
             const id = ++nextId;
             const timer = setTimeout(() => {
@@ -126,6 +129,7 @@ function createCdpClient(webSocketUrl) {
 
     return {
         on,
+        callRaw: call,
         Page: domain("Page"),
         Runtime: domain("Runtime"),
         Browser: domain("Browser"),
@@ -185,7 +189,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         await client.Page.enable();
         console.log(`chromium listening for CDP on ${port}`);
         const shutdown = () => {
-            Promise.allSettled([client.close(), browser.close()]).finally(() => process.exit(0));
+            Promise.allSettled([client.close(), browser.close()])
+                .finally(() => process.exit(0));
         };
         process.on("SIGINT", shutdown);
         process.on("SIGTERM", shutdown);

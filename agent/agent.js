@@ -1,8 +1,16 @@
+#!/usr/bin/env node
+
 import Anthropic from "@anthropic-ai/sdk";
 import {connectToNewPage, launchChromiumWithCdp} from "./cdp.js";
 
 const MAX_TOOL_PAYLOAD_CHARS = 8_000;
-const CDP_PORT = Number(process.env.CDP_PORT ?? process.env.CHROME_REMOTE_DEBUG_PORT ?? 9222);
+const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-5-20251101";
+const MAX_MODEL_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS ?? 1_024);
+const parsedPort = Number(process.env.CDP_PORT ?? process.env.CHROME_REMOTE_DEBUG_PORT ?? 9222);
+if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65_535) {
+    throw new Error(`Invalid CDP port: ${process.env.CDP_PORT ?? process.env.CHROME_REMOTE_DEBUG_PORT}`);
+}
+const CDP_PORT = parsedPort;
 const CDP_HEADLESS = process.env.CDP_HEADLESS === "1" || process.env.CDP_HEADLESS === "true";
 const TRACE = process.env.AGENT_TRACE === "1";
 
@@ -22,7 +30,7 @@ const logRecv = (label, payload, ok = true) => {
     if (TRACE) console.log(colorize(ok ? color.green : color.red)(`[CDP RECV] ${label}: ${payload}`));
 };
 const logThought = (text) => {
-    if (TRACE) console.log(colorize(color.grey)(`[THINK] ${text}`));
+    if (TRACE && text) console.log(colorize(color.grey)(`[THINK] ${text}`));
 };
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -114,50 +122,41 @@ async function connectChrome() {
     }
 }
 
-function validateToolInput(args) {
-    const {domain, method} = args;
-    if (!["Page", "Runtime"].includes(domain)) {
-        throw new Error(`Unsupported CDP domain requested: ${domain}`);
-    }
-    if (typeof method !== "string" || method.length === 0) {
-        throw new Error("CDP method must be a non-empty string");
-    }
-}
-
 async function runCdpCommand(client, args) {
-    validateToolInput(args);
     const {domain, method, params = {}} = args;
-    const targetDomain = client[domain];
-    if (!targetDomain || typeof targetDomain[method] !== "function") {
-        throw new Error(`Unknown CDP method: ${domain}.${method}`);
-    }
-    logSend(`${domain}.${method}`, JSON.stringify(params));
+    const methodName = method?.includes(".") ? method : `${domain}.${method}`;
+    logSend(methodName, JSON.stringify(params));
     try {
-        const result = await targetDomain[method](params);
-        logRecv(`${domain}.${method}`, JSON.stringify(result), true);
+        const result = await client.callRaw(methodName, params);
+        logRecv(methodName, JSON.stringify(result), true);
         return result;
     } catch (err) {
-        logRecv(`${domain}.${method}`, String(err), false);
-        throw err;
+        logRecv(methodName, String(err), false);
+        return {error: String(err)};
     }
 }
 
-async function runAgent(userText) {
+async function runAgent(rawUserText) {
+    const userText = rawUserText?.trim() || "Open https://example.com, wait for it to load, grab document.title and tell me what it is.";
     const chrome = await connectChrome();
-    const system = "You are an agent that controls Chrome via the DevTools Protocol. Use the cdp_command tool to navigate pages and inspect them. Prefer high-level actions like Page.navigate and Runtime.evaluate.";
+    const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web.";
     const messages = [{role: "user", content: [{type: "text", text: userText}]}];
     try {
         for (let round = 0; ; round += 1) {
             const result = await anthropic.messages.create({
-                model: "claude-opus-4-5-20251101",
-                max_tokens: 1024,
+                model: MODEL,
+                max_tokens: MAX_MODEL_TOKENS,
                 system,
                 messages,
                 tools,
                 tool_choice: {type: "auto"},
             });
-            const toolUses = result.content.filter((b) => b.type === "tool_use" && b.name === "cdp_command");
-            const texts = result.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+            const toolUses = result.content
+                .filter((b) => b.type === "tool_use" && b.name === "cdp_command");
+            const texts = result.content
+                .filter((b) => b.type === "text")
+                .map((b) => b.text)
+                .join("");
             if (toolUses.length === 0) {
                 if (texts) {
                     logThought(texts);
@@ -185,6 +184,7 @@ async function runAgent(userText) {
                 console.log(texts);
             }
         }
+        throw new Error(`Conversation exceeded safe turn limit of ${MAX_TURNS}`);
     } finally {
         try {
             await chrome.close();
@@ -194,7 +194,7 @@ async function runAgent(userText) {
     }
 }
 
-const userText = process.argv.slice(2).join(" ") || "Open https://example.com, wait for it to load, grab document.title and tell me what it is.";
+const userText = process.argv.slice(2).join(" ");
 runAgent(userText).catch(err => {
     console.error(err);
     process.exit(1);
