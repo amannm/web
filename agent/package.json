@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "sharp": "^0.33.5"
   }
 }

@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 
 import Anthropic from "@anthropic-ai/sdk";
+import readline from "node:readline/promises";
+import {stdin as input, stdout as output} from "node:process";
 import {connectToNewPage, launchChromiumWithCdp} from "./cdp.js";
+import sharp from "sharp";
 
 const MAX_TOOL_PAYLOAD_CHARS = 8_000;
 const MODEL = "claude-opus-4-5-20251101";
 const MAX_MODEL_TOKENS = 1_024;
 const CDP_PORT = 9_222;
 const CDP_HEADLESS = false;
+const MAX_IMAGE_BYTES = 5_000_000;
+const MAX_IMAGE_DIM = 8_000;
+const ALLOWED_IMAGE_FORMATS = new Set(["png", "jpeg", "jpg", "webp", "gif"]);
+const CAN_PROMPT_USER = input.isTTY;
 const args = process.argv.slice(2);
 const debugFlagIndex = args.indexOf("--debug");
 const TRACE = debugFlagIndex >= 0;
@@ -54,23 +61,6 @@ const tools = [{
         additionalProperties: false
     }
 }];
-
-function toMessageParamContent(blocks) {
-    return blocks.map((block) => {
-        if (block.type === "tool_use") {
-            return {
-                type: "tool_use",
-                id: block.id,
-                name: block.name,
-                input: block.input,
-            };
-        }
-        if (block.type === "text") {
-            return {type: "text", text: block.text};
-        }
-        return block;
-    });
-}
 
 async function connectChrome() {
     const port = CDP_PORT;
@@ -136,11 +126,71 @@ async function runCdpCommand(client, args) {
     }
 }
 
+const toFullMethodName = (domain, method) => method?.includes(".") ? method : `${domain}.${method}`;
+const isScreenshotOutput = (methodName, output) =>
+    Boolean(methodName?.endsWith(".captureScreenshot") && output && typeof output.data === "string");
+
+const toMessageContent = (blocks) => blocks.map((block) => {
+    if (block.type === "tool_use") {
+        return {
+            type: "tool_use",
+            id: block.id,
+            name: block.name,
+            input: block.input,
+        };
+    }
+    if (block.type === "text") {
+        return {type: "text", text: block.text};
+    }
+    return block;
+});
+
+async function normalizeImage(base64Data) {
+    const input = Buffer.from(base64Data, "base64");
+    const pipeline = sharp(input, {limitInputPixels: MAX_IMAGE_DIM * MAX_IMAGE_DIM});
+    const metadata = await pipeline.metadata();
+    const format = metadata.format?.toLowerCase();
+    if (!format || !ALLOWED_IMAGE_FORMATS.has(format)) {
+        throw new Error(`Unsupported screenshot format: ${metadata.format ?? "unknown"}`);
+    }
+    const width = metadata.width ?? MAX_IMAGE_DIM;
+    const height = metadata.height ?? MAX_IMAGE_DIM;
+    const scaleForDims = Math.min(1, MAX_IMAGE_DIM / width, MAX_IMAGE_DIM / height);
+    const resized = scaleForDims < 1
+        ? pipeline.resize({
+            width: Math.floor(width * scaleForDims),
+            height: Math.floor(height * scaleForDims),
+            fit: "inside",
+        })
+        : pipeline;
+    let {data: buffer, info} = await resized.toFormat(format).toBuffer({resolveWithObject: true});
+    const shrinkUntilFits = async () => {
+        let currentBuffer = buffer;
+        let currentInfo = info;
+        for (let attempts = 0; attempts < 5 && currentBuffer.length > MAX_IMAGE_BYTES; attempts += 1) {
+            const factor = Math.sqrt(MAX_IMAGE_BYTES / currentBuffer.length);
+            const nextWidth = Math.max(1, Math.floor((currentInfo.width ?? MAX_IMAGE_DIM) * factor));
+            const nextHeight = Math.max(1, Math.floor((currentInfo.height ?? MAX_IMAGE_DIM) * factor));
+            const next = await sharp(currentBuffer)
+                .resize({width: nextWidth, height: nextHeight, fit: "inside"})
+                .toFormat(format)
+                .toBuffer({resolveWithObject: true});
+            currentBuffer = next.data;
+            currentInfo = next.info;
+        }
+        return {data: currentBuffer, info: currentInfo};
+    };
+    const shrunk = buffer.length > MAX_IMAGE_BYTES ? await shrinkUntilFits() : {data: buffer, info};
+    const mediaType = `image/${format === "jpg" ? "jpeg" : format}`;
+    return {base64: shrunk.data.toString("base64"), mediaType};
+}
+
 async function runAgent(rawUserText) {
     const userText = rawUserText?.trim() || "Open https://example.com, wait for it to load, grab document.title and tell me what it is.";
     const chrome = await connectChrome();
     const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web. Stay token-efficient.";
     const messages = [{role: "user", content: [{type: "text", text: userText}]}];
+    const rl = CAN_PROMPT_USER ? readline.createInterface({input, output}) : null;
     try {
         for (let round = 0; ; round += 1) {
             const result = await anthropic.messages.create({
@@ -151,6 +201,7 @@ async function runAgent(rawUserText) {
                 tools,
                 tool_choice: {type: "auto"},
             });
+            const content = toMessageContent(result.content);
             const toolUses = result.content
                 .filter((b) => b.type === "tool_use" && b.name === "cdp_command");
             const texts = result.content
@@ -162,21 +213,47 @@ async function runAgent(rawUserText) {
                     logThought(texts);
                     console.log(texts);
                 }
+                messages.push({role: "assistant", content});
+                const stopReason = result.stop_reason ?? "end_turn";
+                const autoContinue = stopReason === "max_tokens" || stopReason === "pause_turn";
+                if (autoContinue) {
+                    continue;
+                }
+                if (rl) {
+                    const followUp = (await rl.question(colorize(color.grey)("Reply (leave blank to finish): "))).trim();
+                    if (followUp) {
+                        messages.push({role: "user", content: [{type: "text", text: followUp}]});
+                        continue;
+                    }
+                }
                 return;
             }
-            messages.push({role: "assistant", content: toMessageParamContent(result.content)});
+            messages.push({role: "assistant", content});
             for (const use of toolUses) {
+                const methodName = toFullMethodName(use.input.domain, use.input.method);
                 const output = await runCdpCommand(chrome.client, use.input);
-                const serialized = JSON.stringify(output);
+                const screenshot = isScreenshotOutput(methodName, output);
+                const sanitized = screenshot ? {...output, data: "<base64 image/png omitted>"} : output;
+                const serialized = JSON.stringify(sanitized);
                 const trimmed = serialized.length > MAX_TOOL_PAYLOAD_CHARS
                     ? `${serialized.slice(0, MAX_TOOL_PAYLOAD_CHARS)}… (truncated)`
                     : serialized;
                 if (TRACE) {
                     logRecv("cdp_command result", trimmed, true);
                 }
+                let toolResultContent = trimmed;
+                if (screenshot) {
+                    try {
+                        const processed = await normalizeImage(output.data);
+                        toolResultContent = [{type: "image", source: {type: "base64", media_type: processed.mediaType, data: processed.base64}}];
+                    } catch (e) {
+                        const message = e instanceof Error ? e.message : String(e);
+                        toolResultContent = [{type: "text", text: `Failed to normalize screenshot: ${message}`}];
+                    }
+                }
                 messages.push({
                     role: "user",
-                    content: [{type: "tool_result", tool_use_id: use.id, content: trimmed}],
+                    content: [{type: "tool_result", tool_use_id: use.id, content: toolResultContent}],
                 });
             }
             if (texts) {
@@ -189,6 +266,11 @@ async function runAgent(rawUserText) {
             await chrome.close();
         } catch (e) {
             console.warn("Failed to close Chrome cleanly", e);
+        }
+        try {
+            rl?.close();
+        } catch {
+            // ignore readline close errors
         }
     }
 }
