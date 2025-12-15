@@ -8,7 +8,11 @@ import sharp from "sharp";
 
 const MAX_TOOL_PAYLOAD_CHARS = 8_000;
 const MODEL = "claude-opus-4-5-20251101";
-const MAX_MODEL_TOKENS = 1_024;
+const MAX_MODEL_TOKENS = 4_096;
+const ENABLE_EXTENDED_THINKING = true;
+const THINKING_BUDGET_TOKENS = 2_048;
+const ENABLE_INTERLEAVED_THINKING = true;
+const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
 const CDP_PORT = 9_222;
 const CDP_HEADLESS = false;
 const MAX_IMAGE_BYTES = 5_000_000;
@@ -145,6 +149,147 @@ const toMessageContent = (blocks) => blocks.map((block) => {
     return block;
 });
 
+async function createMessageWithStreaming(createParams) {
+    // Use SSE streaming to incrementally render text while still reconstructing a final Message-like object.
+    const {betas, ...params} = createParams ?? {};
+    const client = (Array.isArray(betas) && betas.length > 0)
+        ? anthropic.beta.messages
+        : anthropic.messages;
+    const stream = await client.create({
+        ...params,
+        ...(Array.isArray(betas) && betas.length > 0 ? {betas} : {}),
+        stream: true,
+    });
+
+    /** @type {any} */
+    let message = null;
+    const toolInputJsonByIndex = new Map();
+
+    let sawTextDelta = false;
+    let lastChar = "";
+
+    const iterator = stream[Symbol.asyncIterator]();
+    while (true) {
+        const {value: event, done} = await iterator.next();
+        if (done) break;
+        if (!event || typeof event !== "object") continue;
+
+        switch (event.type) {
+            case "message_start": {
+                message = event.message;
+                if (message) {
+                    message.content = [];
+                }
+                break;
+            }
+            case "content_block_start": {
+                const idx = event.index;
+                const block = event.content_block;
+                if (!message) {
+                    message = {role: "assistant", content: []};
+                }
+                message.content[idx] = block;
+                if (block?.type === "tool_use") {
+                    toolInputJsonByIndex.set(idx, "");
+                }
+                break;
+            }
+            case "content_block_delta": {
+                const idx = event.index;
+                const delta = event.delta;
+                const block = message?.content?.[idx];
+
+                if (delta?.type === "text_delta") {
+                    const t = delta.text ?? "";
+                    if (block && block.type === "text") {
+                        block.text = (block.text ?? "") + t;
+                    }
+                    if (t) {
+                        sawTextDelta = true;
+                        lastChar = t.slice(-1);
+                        output.write(t);
+                    }
+                } else if (delta?.type === "input_json_delta") {
+                    const part = delta.partial_json ?? "";
+                    toolInputJsonByIndex.set(idx, (toolInputJsonByIndex.get(idx) ?? "") + part);
+                } else if (delta?.type === "thinking_delta") {
+                    // Handle extended thinking streaming deltas (thinking_delta/signature_delta).
+                    if (block && block.type === "thinking") {
+                        block.thinking = (block.thinking ?? "") + (delta.thinking ?? "");
+                    }
+                } else if (delta?.type === "signature_delta") {
+                    if (block && block.type === "thinking") {
+                        block.signature = delta.signature ?? block.signature;
+                    }
+                }
+                break;
+            }
+            case "content_block_stop": {
+                const idx = event.index;
+                const block = message?.content?.[idx];
+                if (block?.type === "tool_use") {
+                    const json = toolInputJsonByIndex.get(idx) ?? "";
+                    const trimmed = json.trim();
+                    if (trimmed) {
+                        try {
+                            block.input = JSON.parse(trimmed);
+                        } catch {
+                            block.input = {__raw_partial_json: json};
+                        }
+                    }
+                }
+                break;
+            }
+            case "message_delta": {
+                if (!message) break;
+                const delta = event.delta ?? {};
+                if (delta.stop_reason != null) message.stop_reason = delta.stop_reason;
+                if (delta.stop_sequence != null) message.stop_sequence = delta.stop_sequence;
+                if (event.usage) message.usage = {...(message.usage ?? {}), ...event.usage};
+                if (delta.stop_reason === "tool_use") {
+                    if (typeof iterator.return === "function") {
+                        try {
+                            await iterator.return();
+                        } catch {
+                            // ignore early-return errors
+                        }
+                    }
+                    if (stream?.controller?.abort) {
+                        try {
+                            stream.controller.abort();
+                        } catch {
+                            // ignore abort errors
+                        }
+                    }
+                    break;
+                }
+                break;
+            }
+            case "message_stop":
+            case "ping": {
+                break;
+            }
+            case "error": {
+                const errMsg = event.error?.message ?? JSON.stringify(event.error ?? event);
+                throw new Error(`Anthropic streaming error: ${errMsg}`);
+            }
+            default: {
+                break;
+            }
+        }
+        if (message?.stop_reason === "tool_use") {
+            break;
+        }
+    }
+
+    // Mirror the previous console.log behavior (ensure we end the streamed line).
+    if (sawTextDelta && lastChar !== "\n") {
+        output.write("\n");
+    }
+
+    return message ?? {role: "assistant", content: []};
+}
+
 async function normalizeImage(base64Data) {
     const input = Buffer.from(base64Data, "base64");
     const pipeline = sharp(input, {limitInputPixels: MAX_IMAGE_DIM * MAX_IMAGE_DIM});
@@ -191,11 +336,17 @@ async function runAgent(rawUserText) {
     const system = "You are connected to Chrome via its DevTools Protocol. Use the cdp_command tool to surf the web. Stay token-efficient.";
     const messages = [{role: "user", content: [{type: "text", text: userText}]}];
     const rl = CAN_PROMPT_USER ? readline.createInterface({input, output}) : null;
+    const betas = ENABLE_INTERLEAVED_THINKING ? [INTERLEAVED_THINKING_BETA] : [];
+    const thinking = ENABLE_EXTENDED_THINKING
+        ? {type: "enabled", budget_tokens: THINKING_BUDGET_TOKENS}
+        : null;
     try {
         for (let round = 0; ; round += 1) {
-            const result = await anthropic.messages.create({
+            const result = await createMessageWithStreaming({
                 model: MODEL,
                 max_tokens: MAX_MODEL_TOKENS,
+                ...(thinking ? {thinking} : {}),
+                ...(betas.length ? {betas} : {}),
                 system,
                 messages,
                 tools,
@@ -211,7 +362,13 @@ async function runAgent(rawUserText) {
             if (toolUses.length === 0) {
                 if (texts) {
                     logThought(texts);
-                    console.log(texts);
+                }
+                const thinkingText = result.content
+                    .filter((b) => b.type === "thinking")
+                    .map((b) => b.thinking ?? "")
+                    .join("");
+                if (thinkingText) {
+                    logThought(thinkingText);
                 }
                 messages.push({role: "assistant", content});
                 const stopReason = result.stop_reason ?? "end_turn";
@@ -229,6 +386,9 @@ async function runAgent(rawUserText) {
                 return;
             }
             messages.push({role: "assistant", content});
+
+            /** @type {any[]} */
+            const toolResultBlocks = [];
             for (const use of toolUses) {
                 const methodName = toFullMethodName(use.input.domain, use.input.method);
                 const output = await runCdpCommand(chrome.client, use.input);
@@ -251,14 +411,17 @@ async function runAgent(rawUserText) {
                         toolResultContent = [{type: "text", text: `Failed to normalize screenshot: ${message}`}];
                     }
                 }
-                messages.push({
-                    role: "user",
-                    content: [{type: "tool_result", tool_use_id: use.id, content: toolResultContent}],
+                toolResultBlocks.push({
+                    type: "tool_result",
+                    tool_use_id: use.id,
+                    content: toolResultContent,
                 });
             }
+
+            messages.push({role: "user", content: toolResultBlocks});
+
             if (texts) {
                 logThought(texts);
-                console.log(texts);
             }
         }
     } finally {
