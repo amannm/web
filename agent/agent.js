@@ -213,7 +213,6 @@ async function createMessageWithStreaming(createParams) {
                     const part = delta.partial_json ?? "";
                     toolInputJsonByIndex.set(idx, (toolInputJsonByIndex.get(idx) ?? "") + part);
                 } else if (delta?.type === "thinking_delta") {
-                    // Handle extended thinking streaming deltas (thinking_delta/signature_delta).
                     if (block && block.type === "thinking") {
                         block.thinking = (block.thinking ?? "") + (delta.thinking ?? "");
                     }
