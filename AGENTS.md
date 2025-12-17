@@ -57,4 +57,6 @@ description: Web browsing expert.
 # Reference material
 - [Chromium Source Code](reference/chromium)
 - [Chromium DevTools Protocol](reference/devtools-protocol)
+- [Chrome DevTools Frontend Source Code](reference/devtools-frontend)
+- [OpenAI API Reference](reference/openai)
 - [Browser-Use Source Code](reference/browser-use)
