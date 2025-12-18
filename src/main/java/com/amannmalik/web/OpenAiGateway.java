@@ -16,10 +16,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/**
- * Thin wrapper around the OpenAI Responses API streaming endpoint.
- * /// reference/openai/responses.md
- */
 public final class OpenAiGateway {
 
     private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
@@ -69,17 +65,26 @@ public final class OpenAiGateway {
 
         for (var toolCalls = 0; toolCalls < MAX_TOOL_CALLS; toolCalls++) {
             var outcome = streamOnce(inputItems, tools, fullText, onTextDelta, onEvent);
-            if (outcome.pendingToolCall().isEmpty()) {
+            if (outcome instanceof ResponsesStream.CompletedOutcome completed) {
+                // Preserve assistant-produced items for potential chained callers; harmless if unused.
+                inputItems.addAll(completed.outputItems().values());
+                inputItems.addAll(completed.reasoningItems().values());
                 return fullText.toString();
             }
 
-            var call = outcome.pendingToolCall().orElseThrow();
+            if (!(outcome instanceof ResponsesStream.ToolCallOutcome tcOutcome)) {
+                throw new IOException("Unexpected ResponsesStream outcome: " + outcome.getClass().getSimpleName());
+            }
+
+            var call = tcOutcome.pendingToolCall();
             if (!CDP_TOOL_NAME.equals(call.name())) {
                 throw new IOException("Unexpected custom tool call: " + call.name());
             }
-            for (var reasoning : outcome.reasoningItems().values()) {
-                inputItems.add(reasoning);
-            }
+
+            // Feed every model-generated item back in so the next turn preserves context, per Responses API guidance.
+            inputItems.addAll(tcOutcome.outputItems().values());
+            inputItems.addAll(tcOutcome.reasoningItems().values());
+
             String toolOutput;
             try {
                 toolOutput = cdp.sendRaw(call.input()).toString();
@@ -160,7 +165,6 @@ public final class OpenAiGateway {
                         .add("format", Json.createObjectBuilder()
                                 .add("type", "grammar")
                                 .add("syntax", "regex")
-                                // /// reference/devtools-protocol/browser_protocol.json
                                 .add("definition", "^\\\\{[\\\\s\\\\S]*\\\\}$")
                                 .build())
                         .build())

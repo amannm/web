@@ -12,16 +12,28 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Consumer;
 
 final class ResponsesStream {
 
+    sealed interface Outcome permits CompletedOutcome, ToolCallOutcome {}
+
     record PendingToolCall(String name, String callId, String input) {}
 
-    record Outcome(Optional<PendingToolCall> pendingToolCall,
-                   Map<String, JsonObject> reasoningItems) {
-        Outcome {
+    record CompletedOutcome(Map<String, JsonObject> outputItems,
+                            Map<String, JsonObject> reasoningItems) implements Outcome {
+        CompletedOutcome {
+            outputItems = Map.copyOf(outputItems);
+            reasoningItems = Map.copyOf(reasoningItems);
+        }
+    }
+
+    record ToolCallOutcome(PendingToolCall pendingToolCall,
+                           Map<String, JsonObject> outputItems,
+                           Map<String, JsonObject> reasoningItems) implements Outcome {
+        ToolCallOutcome {
+            pendingToolCall = Objects.requireNonNull(pendingToolCall, "pendingToolCall");
+            outputItems = Map.copyOf(outputItems);
             reasoningItems = Map.copyOf(reasoningItems);
         }
     }
@@ -116,7 +128,10 @@ final class ResponsesStream {
         }
 
         Outcome toOutcome() {
-            return new Outcome(Optional.ofNullable(pendingToolCall), reasoningItems);
+            if (pendingToolCall != null) {
+                return new ToolCallOutcome(pendingToolCall, outputItems, reasoningItems);
+            }
+            return new CompletedOutcome(outputItems, reasoningItems);
         }
 
         void throwIfUnsuccessful() throws IOException {

@@ -16,7 +16,7 @@ import java.util.Arrays;
 
 public class Agent {
 
-    public static void main(String[] args) {
+    static void run(String[] args) {
         if (args.length < 2) {
             System.err.println("Usage: Agent <cdpPort> <prompt...>");
             System.err.println("Example: Agent 9222 \"Navigate to https://example.com and summarize\"");
@@ -50,7 +50,7 @@ public class Agent {
             gateway.streamResponseTextViaCdp(prompt, cdp, delta -> {
                         System.out.print(delta);
                         System.out.flush();
-                    }, evt -> {
+                    }, _ -> {
                     }
             );
             System.out.println();
@@ -66,7 +66,6 @@ public class Agent {
     }
 
     private static URI resolveWebSocketDebuggerUrl(HttpClient http, int port) throws IOException, InterruptedException {
-        // Prefer a page target so Page.* methods work without Target.attachToTarget/sessionId.
         var listUri = URI.create("http://127.0.0.1:" + port + "/json/list");
         var listReq = HttpRequest.newBuilder()
                 .uri(listUri)
@@ -94,8 +93,6 @@ public class Agent {
                 // fall through to /json/version
             }
         }
-
-        // Fallback: browser target endpoint (may require Target.attachToTarget + sessionId for page-level domains).
         var versionUri = URI.create("http://127.0.0.1:" + port + "/json/version");
         var req = HttpRequest.newBuilder()
                 .uri(versionUri)
