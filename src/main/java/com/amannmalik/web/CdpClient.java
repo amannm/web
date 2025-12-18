@@ -93,6 +93,33 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         }
     }
 
+    public JsonObject send(CdpCommand command) {
+        return send(command, defaultTimeout);
+    }
+
+    public JsonObject send(CdpCommand command, Duration timeout) {
+        Objects.requireNonNull(command, "command");
+        connect();
+        var id = nextId.getAndIncrement();
+        var msg = command.toJson(id);
+        var fut = new CompletableFuture<JsonObject>();
+        pendingById.put(id, fut);
+        try {
+            ws.sendText(msg.toString(), true).join();
+            var toMs = Math.max(1L, timeout.toMillis());
+            return fut.get(toMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted waiting for CDP response", e);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("Timed out waiting for CDP response (id=" + id + ")", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Failed waiting for CDP response", e.getCause());
+        } finally {
+            pendingById.remove(id);
+        }
+    }
+
     @Override
     public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
         synchronized (incomingText) {

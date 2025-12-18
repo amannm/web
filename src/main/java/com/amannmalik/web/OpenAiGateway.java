@@ -76,15 +76,7 @@ final class OpenAiGateway {
             }
             inputItems.addAll(outputItems.values());
             inputItems.addAll(reasoningItems.values());
-            String toolOutput;
-            try {
-                toolOutput = cdp.sendRaw(pendingToolCall.input()).toString();
-            } catch (RuntimeException e) {
-                toolOutput = Json.createObjectBuilder()
-                        .add("error", String.valueOf(e.getMessage()))
-                        .build()
-                        .toString();
-            }
+            var toolOutput = executeCdpToolCall(cdp, pendingToolCall);
             inputItems.add(toCustomToolCallItem(pendingToolCall));
             inputItems.add(toCustomToolOutputItem(pendingToolCall, toolOutput));
         }
@@ -127,6 +119,34 @@ final class OpenAiGateway {
         }
     }
 
+    private String executeCdpToolCall(CdpClient cdp, ResponsesStream.PendingToolCall pendingToolCall) {
+        return withFailureGuard("cdp tool call", () -> {
+            var command = CdpCommand.fromJsonString(pendingToolCall.input());
+            return cdp.send(command).toString();
+        });
+    }
+
+    private static String withFailureGuard(String label, SupplierWithIOException action) {
+        try {
+            return action.get();
+        } catch (Exception e) {
+            var message = e.getMessage() == null || e.getMessage().isBlank()
+                    ? e.getClass().getSimpleName()
+                    : e.getMessage();
+            return Json.createObjectBuilder()
+                    .add("error", Json.createObjectBuilder()
+                            .add("where", label)
+                            .add("message", message))
+                    .build()
+                    .toString();
+        }
+    }
+
+    @FunctionalInterface
+    private interface SupplierWithIOException {
+        String get() throws Exception;
+    }
+
     private static JsonObject userPrompt(String prompt) {
         return Json.createObjectBuilder()
                 .add("role", "user")
@@ -148,14 +168,28 @@ final class OpenAiGateway {
                         .add("type", "custom")
                         .add("name", CDP_TOOL_NAME)
                         .add("description",
-                                "Send exactly ONE Chrome DevTools Protocol (CDP) command as a raw JSON object string. " +
-                                        "The JSON should include: method (string), optional params (object), and optional sessionId (string). " +
-                                        "Do NOT include an id; the client will inject it. The tool returns the raw JSON response.")
-                        .add("format", Json.createObjectBuilder()
-                                .add("type", "grammar")
-                                .add("syntax", "regex")
-                                .add("definition", "^\\\\{[\\\\s\\\\S]*\\\\}$")
-                                .build())
+                                """
+                                Issue exactly one Chrome DevTools Protocol command. Format: {"method": "...", "params": {...}, "sessionId": "..."}.
+                                - "method" is required and must match a CDP method name (see https://chromedevtools.github.io/devtools-protocol/).
+                                - "params" is optional and must be an object when present.
+                                - "sessionId" is optional and required when targeting a specific session (e.g., Target.attachToTarget).
+                                Do NOT include an "id"; the client injects it. Submit only one command per tool call and wait for the result before continuing."""
+                        )
+                        .add("input_schema", Json.createObjectBuilder()
+                                .add("type", "json_schema")
+                                .add("json_schema", Json.createObjectBuilder()
+                                        .add("type", "object")
+                                        .add("properties", Json.createObjectBuilder()
+                                                .add("method", Json.createObjectBuilder()
+                                                        .add("type", "string")
+                                                        .add("minLength", 1))
+                                                .add("params", Json.createObjectBuilder()
+                                                        .add("type", "object"))
+                                                .add("sessionId", Json.createObjectBuilder()
+                                                        .add("type", "string")
+                                                        .add("minLength", 1)))
+                                        .add("required", Json.createArrayBuilder().add("method"))
+                                        .add("additionalProperties", false)))
                         .build())
                 .build();
     }
