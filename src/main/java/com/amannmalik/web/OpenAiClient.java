@@ -19,30 +19,36 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-final class OpenAiGateway {
+final class OpenAiClient {
 
     private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
     private static final int MAX_TOOL_CALLS = 8;
     private static final Duration STREAM_TIMEOUT = Duration.ofMinutes(5);
     private static final String CDP_TOOL_NAME = "cdp_command";
     private static final String TOOL_USE_INSTRUCTION = "Use the `cdp_command` custom tool to drive the browser. Call a tool before emitting any user-visible text and wait for its output before continuing.";
-    private static final String OPENAI_BETA_HEADER_VALUE = "responses-2024-12-17";
+    private static final String DEFAULT_BETA_HEADER_VALUE = "responses=v1";
 
     private final HttpClient http;
     private final String openAiApiKey;
     private final String model;
     private final ResponsesStream responsesStream;
+    private final String openAiBetaHeader;
 
-    public OpenAiGateway() {
+    public OpenAiClient() {
         this(System.getenv("OPENAI_API_KEY"),
                 System.getenv().getOrDefault("OPENAI_MODEL", "gpt-5"),
+                System.getenv("OPENAI_BETA_RESPONSES"),
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(20))
                         .build(),
                 new ResponsesStream());
     }
 
-    OpenAiGateway(String openAiApiKey, String model, HttpClient http, ResponsesStream responsesStream) {
+    OpenAiClient(String openAiApiKey,
+                 String model,
+                 String openAiBetaHeader,
+                 HttpClient http,
+                 ResponsesStream responsesStream) {
         if (openAiApiKey == null || openAiApiKey.isBlank()) {
             throw new IllegalStateException("OPENAI_API_KEY is required");
         }
@@ -50,6 +56,7 @@ final class OpenAiGateway {
         this.model = Objects.requireNonNullElse(model, "gpt-5");
         this.http = Objects.requireNonNull(http, "http");
         this.responsesStream = Objects.requireNonNull(responsesStream, "responsesStream");
+        this.openAiBetaHeader = normalizeBetaHeader(openAiBetaHeader);
     }
 
     public String streamResponseTextViaCdp(String prompt,
@@ -108,7 +115,7 @@ final class OpenAiGateway {
                 .header("Authorization", "Bearer " + openAiApiKey)
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
-                .header("OpenAI-Beta", OPENAI_BETA_HEADER_VALUE)
+                .headers(optionalBetaHeader())
                 .POST(HttpRequest.BodyPublishers.ofString(bodyBuilder.build().toString(), StandardCharsets.UTF_8))
                 .build();
         var resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
@@ -124,7 +131,7 @@ final class OpenAiGateway {
 
     private String executeCdpToolCall(CdpClient cdp, State.PendingToolCall pendingToolCall) {
         return withFailureGuard("cdp tool call", () -> {
-            var command = CdpCommand.fromJsonString(pendingToolCall.input());
+            var command = CdpCommand.fromJson(pendingToolCall.input());
             return cdp.send(command).toString();
         });
     }
@@ -172,11 +179,11 @@ final class OpenAiGateway {
                         .add("name", CDP_TOOL_NAME)
                         .add("description",
                                 """
-                                Issue exactly one Chrome DevTools Protocol command. Format: {"method": "...", "params": {...}, "sessionId": "..."}.
-                                - "method" is required and must match a CDP method name (see https://chromedevtools.github.io/devtools-protocol/).
-                                - "params" is optional and must be an object when present.
-                                - "sessionId" is optional and required when targeting a specific session (e.g., Target.attachToTarget).
-                                Do NOT include an "id"; the client injects it. Submit only one command per tool call and wait for the result before continuing."""
+                                        Issue exactly one Chrome DevTools Protocol command. Format: {"method": "...", "params": {...}, "sessionId": "..."}.
+                                        - "method" is required and must match a CDP method name (see https://chromedevtools.github.io/devtools-protocol/).
+                                        - "params" is optional and must be an object when present.
+                                        - "sessionId" is optional and required when targeting a specific session (e.g., Target.attachToTarget).
+                                        Do NOT include an "id"; the client injects it. Submit only one command per tool call and wait for the result before continuing."""
                         )
                         .add("input_schema", Json.createObjectBuilder()
                                 .add("type", "json_schema")
@@ -212,6 +219,18 @@ final class OpenAiGateway {
                 .add("call_id", call.callId())
                 .add("output", output)
                 .build();
+    }
+
+    private String[] optionalBetaHeader() {
+        if (openAiBetaHeader == null || openAiBetaHeader.isBlank()) {
+            return new String[0];
+        }
+        return new String[]{"OpenAI-Beta", openAiBetaHeader};
+    }
+
+    private static String normalizeBetaHeader(String requested) {
+        var trimmed = requested == null ? "" : requested.trim();
+        return trimmed.isEmpty() ? DEFAULT_BETA_HEADER_VALUE : trimmed;
     }
 
     static final class ResponsesStream {

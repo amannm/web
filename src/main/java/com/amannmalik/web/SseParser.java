@@ -5,8 +5,10 @@ import java.io.IOException;
 import java.util.Objects;
 
 final class SseParser {
+
     private final ThrowingConsumer<SseEvent> onEvent;
     private final StringBuilder data = new StringBuilder(2048);
+
     private String eventName = "message";
     private String lastEventId = "";
     private Integer retryMillis;
@@ -91,6 +93,9 @@ final class SseParser {
         void accept(T value) throws IOException;
     }
 
-    record SseEvent(String event, String data, String lastEventId, Integer retryMillis) {
+    record SseEvent(String event,
+                    String data,
+                    String lastEventId,
+                    Integer retryMillis) {
     }
 }

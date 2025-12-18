@@ -7,7 +7,9 @@ import jakarta.json.JsonValue;
 import java.io.StringReader;
 import java.util.Objects;
 
-public record CdpCommand(String method, JsonObject params, String sessionId) {
+public record CdpCommand(String method,
+                         JsonObject params,
+                         String sessionId) {
 
     public CdpCommand {
         Objects.requireNonNull(method, "method");
@@ -15,7 +17,7 @@ public record CdpCommand(String method, JsonObject params, String sessionId) {
             throw new IllegalArgumentException("CDP method cannot be blank");
         }
         if (sessionId != null && sessionId.isBlank()) {
-            sessionId = null; // normalize empty strings to null for clarity
+            sessionId = null;
         }
     }
 
@@ -32,7 +34,7 @@ public record CdpCommand(String method, JsonObject params, String sessionId) {
         return builder.build();
     }
 
-    static CdpCommand fromJsonString(String raw) {
+    static CdpCommand fromJson(String raw) {
         Objects.requireNonNull(raw, "raw");
         try (var reader = Json.createReader(new StringReader(raw))) {
             var obj = reader.readObject();

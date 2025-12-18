@@ -39,7 +39,7 @@ public final class Agent {
             e.printStackTrace(System.err);
             return 1;
         }
-        var gateway = new OpenAiGateway();
+        var gateway = new OpenAiClient();
         try (var cdp = new CdpClient(wsUri, http, CDP_TIMEOUT, evt -> {
             System.err.println("[CDP event] " + evt);
         })) {

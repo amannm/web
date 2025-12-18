@@ -83,20 +83,23 @@ final class State {
             case CUSTOM_TOOL_CALL_INPUT_DELTA -> bufferToolInput(evt);
             case CUSTOM_TOOL_CALL_INPUT_DONE -> finalizeToolCall(evt);
             case COMPLETED -> terminal = TerminalState.COMPLETED;
+            case OUTPUT_AUDIO_DELTA, OUTPUT_AUDIO_DONE,
+                 OUTPUT_AUDIO_TRANSCRIPT_DELTA, OUTPUT_AUDIO_TRANSCRIPT_DONE -> {
+            }
             case FAILED -> markFailed(evt);
             case INCOMPLETE -> markIncomplete(evt);
             case ERROR -> markTopLevelError(evt);
             case REASONING_SUMMARY_PART_ADDED, REASONING_SUMMARY_PART_DONE,
-                    OUTPUT_TEXT_ANNOTATION_ADDED, CREATED, QUEUED, IN_PROGRESS,
-                    FILE_SEARCH, FILE_SEARCH_SEARCHING, FILE_SEARCH_COMPLETED,
-                    WEB_SEARCH, WEB_SEARCH_SEARCHING, WEB_SEARCH_COMPLETED,
-                    IMAGE_GEN_IN_PROGRESS, IMAGE_GEN_GENERATING, IMAGE_GEN_PARTIAL, IMAGE_GEN_COMPLETED,
-                    CODE_INTERPRETER_IN_PROGRESS, CODE_INTERPRETER_INTERPRETING, CODE_INTERPRETER_COMPLETED,
-                    CODE_INTERPRETER_CODE_DELTA, CODE_INTERPRETER_CODE_DONE,
-                    MCP_CALL_IN_PROGRESS, MCP_CALL_COMPLETED, MCP_CALL_FAILED,
-                    MCP_CALL_ARGUMENTS_DELTA, MCP_CALL_ARGUMENTS_DONE,
-                    MCP_LIST_TOOLS_IN_PROGRESS, MCP_LIST_TOOLS_COMPLETED, MCP_LIST_TOOLS_FAILED,
-                    FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE -> {
+                 OUTPUT_TEXT_ANNOTATION_ADDED, CREATED, QUEUED, IN_PROGRESS,
+                 FILE_SEARCH, FILE_SEARCH_SEARCHING, FILE_SEARCH_COMPLETED,
+                 WEB_SEARCH, WEB_SEARCH_SEARCHING, WEB_SEARCH_COMPLETED,
+                 IMAGE_GEN_IN_PROGRESS, IMAGE_GEN_GENERATING, IMAGE_GEN_PARTIAL, IMAGE_GEN_COMPLETED,
+                 CODE_INTERPRETER_IN_PROGRESS, CODE_INTERPRETER_INTERPRETING, CODE_INTERPRETER_COMPLETED,
+                 CODE_INTERPRETER_CODE_DELTA, CODE_INTERPRETER_CODE_DONE,
+                 MCP_CALL_IN_PROGRESS, MCP_CALL_COMPLETED, MCP_CALL_FAILED,
+                 MCP_CALL_ARGUMENTS_DELTA, MCP_CALL_ARGUMENTS_DONE,
+                 MCP_LIST_TOOLS_IN_PROGRESS, MCP_LIST_TOOLS_COMPLETED, MCP_LIST_TOOLS_FAILED,
+                 FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE -> {
             }
         }
     }
@@ -362,6 +365,11 @@ final class State {
 
         CUSTOM_TOOL_CALL_INPUT_DELTA("response.custom_tool_call_input.delta"),
         CUSTOM_TOOL_CALL_INPUT_DONE("response.custom_tool_call_input.done"),
+
+        OUTPUT_AUDIO_DELTA("response.output_audio.delta"),
+        OUTPUT_AUDIO_DONE("response.output_audio.done"),
+        OUTPUT_AUDIO_TRANSCRIPT_DELTA("response.output_audio_transcript.delta"),
+        OUTPUT_AUDIO_TRANSCRIPT_DONE("response.output_audio_transcript.done"),
 
         COMPLETED("response.completed"),
         FAILED("response.failed"),
