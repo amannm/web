@@ -64,23 +64,34 @@ final class State {
         if (onEvent != null) {
             onEvent.accept(evt);
         }
-        var type = evt.getString("type", "");
-        switch (type) {
-            case "response.output_text.delta", "response.refusal.delta" -> applyDelta(evt);
-            case "response.reasoning_text.delta", "response.reasoning_summary_text.delta" -> markContentWithDelta(evt);
-            case "response.output_text.done" -> applyFinalText(evt, "text");
-            case "response.refusal.done" -> applyFinalText(evt, "refusal");
-            case "response.content_part.added" -> trackContentPart(evt);
-            case "response.content_part.done" -> finalizeContentPart(evt);
-            case "response.output_item.added", "response.output_item.done" -> trackOutputItem(evt);
-            case "response.custom_tool_call_input.delta" -> bufferToolInput(evt);
-            case "response.custom_tool_call_input.done" -> finalizeToolCall(evt);
-            case "response.completed" -> terminal = TerminalState.COMPLETED;
-            case "response.failed" -> markFailed(evt);
-            case "response.incomplete" -> markIncomplete(evt);
-            case "error" -> markTopLevelError(evt);
-            default -> {
+        switch (ResponseEventType.from(evt.getString("type", ""))) {
+            case OUTPUT_TEXT_DELTA, REFUSAL_DELTA -> applyDelta(evt);
+            case REASONING_TEXT_DELTA, REASONING_SUMMARY_TEXT_DELTA -> markContentWithDelta(evt);
+            case OUTPUT_TEXT_DONE -> applyFinalText(evt, "text");
+            case REFUSAL_DONE -> applyFinalText(evt, "refusal");
+            case CONTENT_PART_ADDED -> trackContentPart(evt);
+            case CONTENT_PART_DONE -> finalizeContentPart(evt);
+            case OUTPUT_ITEM_ADDED, OUTPUT_ITEM_DONE -> trackOutputItem(evt);
+            case CUSTOM_TOOL_CALL_INPUT_DELTA -> bufferToolInput(evt);
+            case CUSTOM_TOOL_CALL_INPUT_DONE -> finalizeToolCall(evt);
+            case COMPLETED -> terminal = TerminalState.COMPLETED;
+            case FAILED -> markFailed(evt);
+            case INCOMPLETE -> markIncomplete(evt);
+            case ERROR -> markTopLevelError(evt);
+            case OUTPUT_TEXT_ANNOTATION_ADDED, CREATED, QUEUED, IN_PROGRESS,
+                    FILE_SEARCH, FILE_SEARCH_SEARCHING, FILE_SEARCH_COMPLETED,
+                    WEB_SEARCH, WEB_SEARCH_SEARCHING, WEB_SEARCH_COMPLETED,
+                    IMAGE_GEN_IN_PROGRESS, IMAGE_GEN_GENERATING, IMAGE_GEN_PARTIAL, IMAGE_GEN_COMPLETED,
+                    CODE_INTERPRETER_IN_PROGRESS, CODE_INTERPRETER_INTERPRETING, CODE_INTERPRETER_COMPLETED,
+                    CODE_INTERPRETER_CODE_DELTA, CODE_INTERPRETER_CODE_DONE,
+                    MCP_CALL_IN_PROGRESS, MCP_CALL_COMPLETED, MCP_CALL_FAILED,
+                    MCP_CALL_ARGUMENTS_DELTA, MCP_CALL_ARGUMENTS_DONE,
+                    MCP_LIST_TOOLS_IN_PROGRESS, MCP_LIST_TOOLS_COMPLETED, MCP_LIST_TOOLS_FAILED,
+                    FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE,
+                    UNKNOWN -> {
+                // intentionally ignored; unknown events are tolerated to remain forward-compatible
             }
+            case REASONING_TEXT_DONE, REASONING_SUMMARY_TEXT_DONE -> markContentWithDelta(evt);
         }
     }
 
