@@ -2,7 +2,6 @@ package com.amannmalik.web;
 
 import jakarta.json.Json;
 import jakarta.json.JsonObject;
-import jakarta.json.JsonArray;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -12,39 +11,33 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Arrays;
+import java.util.Objects;
 
-public class Agent {
+public final class Agent {
 
-    static void run(String[] args) {
-        if (args.length < 2) {
-            System.err.println("Usage: Agent <cdpPort> <prompt...>");
-            System.err.println("Example: Agent 9222 \"Navigate to https://example.com and summarize\"");
-            System.exit(2);
+    private static final Duration CDP_TIMEOUT = Duration.ofSeconds(10);
+
+    private Agent() {
+    }
+
+    public static int run(int port, String prompt) {
+        Objects.requireNonNull(prompt, "prompt");
+        if (prompt.isBlank()) {
+            throw new IllegalArgumentException("Prompt cannot be blank.");
         }
-        int port;
-        try {
-            port = Integer.parseInt(args[0]);
-        } catch (NumberFormatException e) {
-            System.err.println("Invalid cdpPort: " + args[0]);
-            System.exit(2);
-            return;
-        }
-        var prompt = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
         var http = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(CDP_TIMEOUT)
                 .build();
-        URI wsUri;
+        final URI wsUri;
         try {
             wsUri = resolveWebSocketDebuggerUrl(http, port);
         } catch (Exception e) {
             System.err.println("Failed to resolve CDP WebSocket URL from localhost:" + port + " — " + e.getMessage());
             e.printStackTrace(System.err);
-            System.exit(1);
-            return;
+            return 1;
         }
         var gateway = new OpenAiGateway();
-        try (var cdp = new CdpClient(wsUri, http, Duration.ofSeconds(10), evt -> {
+        try (var cdp = new CdpClient(wsUri, http, CDP_TIMEOUT, evt -> {
             System.err.println("[CDP event] " + evt);
         })) {
             gateway.streamResponseTextViaCdp(prompt, cdp, delta -> {
@@ -54,14 +47,15 @@ public class Agent {
                     }
             );
             System.out.println();
+            return 0;
         } catch (IOException e) {
             System.err.println("IO error: " + e.getMessage());
             e.printStackTrace(System.err);
-            System.exit(1);
+            return 1;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             System.err.println("Interrupted.");
-            System.exit(1);
+            return 130;
         }
     }
 
@@ -90,7 +84,6 @@ public class Agent {
                     }
                 }
             } catch (RuntimeException ignored) {
-                // fall through to /json/version
             }
         }
         var versionUri = URI.create("http://127.0.0.1:" + port + "/json/version");

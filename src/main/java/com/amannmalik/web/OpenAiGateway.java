@@ -22,8 +22,7 @@ public final class OpenAiGateway {
     private static final int MAX_TOOL_CALLS = 8;
     private static final Duration STREAM_TIMEOUT = Duration.ofMinutes(5);
     private static final String CDP_TOOL_NAME = "cdp_command";
-    private static final String TOOL_USE_INSTRUCTION = "Use the `cdp_command` custom tool to drive the browser. " +
-            "Call a tool before emitting any user-visible text and wait for its output before continuing.";
+    private static final String TOOL_USE_INSTRUCTION = "Use the `cdp_command` custom tool to drive the browser. Call a tool before emitting any user-visible text and wait for its output before continuing.";
 
     private final HttpClient http;
     private final String openAiApiKey;
@@ -57,45 +56,36 @@ public final class OpenAiGateway {
             throw new IllegalArgumentException("prompt must be non-blank");
         }
         Objects.requireNonNull(cdp, "cdp");
-
         var tools = cdpToolDefinition();
         var inputItems = new ArrayList<JsonObject>();
         inputItems.add(userPrompt(prompt));
         var fullText = new StringBuilder(4096);
-
         for (var toolCalls = 0; toolCalls < MAX_TOOL_CALLS; toolCalls++) {
             var outcome = streamOnce(inputItems, tools, fullText, onTextDelta, onEvent);
-            if (outcome instanceof ResponsesStream.CompletedOutcome completed) {
-                // Preserve assistant-produced items for potential chained callers; harmless if unused.
-                inputItems.addAll(completed.outputItems().values());
-                inputItems.addAll(completed.reasoningItems().values());
+            if (outcome instanceof ResponsesStream.CompletedOutcome(var outputItems, var reasoningItems)) {
+                inputItems.addAll(outputItems.values());
+                inputItems.addAll(reasoningItems.values());
                 return fullText.toString();
             }
-
-            if (!(outcome instanceof ResponsesStream.ToolCallOutcome tcOutcome)) {
+            if (!(outcome instanceof ResponsesStream.ToolCallOutcome(var pendingToolCall, var outputItems, var reasoningItems))) {
                 throw new IOException("Unexpected ResponsesStream outcome: " + outcome.getClass().getSimpleName());
             }
-
-            var call = tcOutcome.pendingToolCall();
-            if (!CDP_TOOL_NAME.equals(call.name())) {
-                throw new IOException("Unexpected custom tool call: " + call.name());
+            if (!CDP_TOOL_NAME.equals(pendingToolCall.name())) {
+                throw new IOException("Unexpected custom tool call: " + pendingToolCall.name());
             }
-
-            // Feed every model-generated item back in so the next turn preserves context, per Responses API guidance.
-            inputItems.addAll(tcOutcome.outputItems().values());
-            inputItems.addAll(tcOutcome.reasoningItems().values());
-
+            inputItems.addAll(outputItems.values());
+            inputItems.addAll(reasoningItems.values());
             String toolOutput;
             try {
-                toolOutput = cdp.sendRaw(call.input()).toString();
+                toolOutput = cdp.sendRaw(pendingToolCall.input()).toString();
             } catch (RuntimeException e) {
                 toolOutput = Json.createObjectBuilder()
                         .add("error", String.valueOf(e.getMessage()))
                         .build()
                         .toString();
             }
-            inputItems.add(toCustomToolCallItem(call));
-            inputItems.add(toCustomToolOutputItem(call, toolOutput));
+            inputItems.add(toCustomToolCallItem(pendingToolCall));
+            inputItems.add(toCustomToolOutputItem(pendingToolCall, toolOutput));
         }
         throw new IOException("Exceeded max tool calls (" + MAX_TOOL_CALLS + ") without completing a response");
     }
@@ -114,10 +104,7 @@ public final class OpenAiGateway {
         if (tools != null) {
             bodyBuilder.add("tools", tools);
         }
-        if (!TOOL_USE_INSTRUCTION.isBlank()) {
-            bodyBuilder.add("instructions", TOOL_USE_INSTRUCTION);
-        }
-
+        bodyBuilder.add("instructions", TOOL_USE_INSTRUCTION);
         var req = HttpRequest.newBuilder()
                 .uri(RESPONSES_URI)
                 .timeout(STREAM_TIMEOUT)
@@ -126,7 +113,6 @@ public final class OpenAiGateway {
                 .header("Accept", "text/event-stream")
                 .POST(HttpRequest.BodyPublishers.ofString(bodyBuilder.build().toString(), StandardCharsets.UTF_8))
                 .build();
-
         var resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
         var status = resp.statusCode();
         if (status < 200 || status >= 300) {

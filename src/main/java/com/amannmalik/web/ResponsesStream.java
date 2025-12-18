@@ -8,6 +8,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -115,7 +116,6 @@ final class ResponsesStream {
         private String failureDetail = "";
         private String incompleteDetail = "";
         private Long nextSequenceNumber;
-        private boolean sawDone;
 
         State(StringBuilder fullText, Consumer<String> onTextDelta, Consumer<JsonObject> onEvent) {
             this.fullText = fullText;
@@ -145,7 +145,7 @@ final class ResponsesStream {
 
         void handleData(String dataJson) throws IOException {
             JsonObject evt;
-            try (var r = Json.createReader(new java.io.StringReader(dataJson))) {
+            try (var r = Json.createReader(new StringReader(dataJson))) {
                 evt = r.readObject();
             } catch (RuntimeException parseErr) {
                 throw new IOException("Malformed SSE payload: " + dataJson, parseErr);
@@ -163,12 +163,11 @@ final class ResponsesStream {
                 case "response.completed" -> terminal = TerminalState.COMPLETED;
                 case "response.failed" -> markFailed(evt);
                 case "response.incomplete" -> markIncomplete(evt);
-                default -> { /* deliberately ignore other lifecycle events */ }
+                default -> {}
             }
         }
 
         void markDoneSignal() {
-            sawDone = true;
             markIncompleteIfNeeded("Received [DONE] before a terminal response event");
         }
 
@@ -254,7 +253,7 @@ final class ResponsesStream {
 
         void markIncompleteIfNeeded(String detail) {
             if (pendingToolCall != null || terminal.isDone()) {
-                return; // tool-call hand-off or already finalized
+                return;
             }
             terminal = TerminalState.INCOMPLETE;
             if (incompleteDetail.isEmpty()) {
