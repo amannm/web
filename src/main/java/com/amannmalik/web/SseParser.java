@@ -4,12 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.Objects;
 
-/**
- * Minimal server-sent events parser that adheres to the WHATWG processing model.
- * We intentionally support the full field set (data, event, id, retry) even though the
- * Responses API currently only emits data lines. This keeps the stream consumer robust
- * to upstream changes without adding additional dependencies.
- */
 final class SseParser {
     private final ThrowingConsumer<SseEvent> onEvent;
     private final StringBuilder data = new StringBuilder(2048);

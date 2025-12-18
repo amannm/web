@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 final class State {
     private final StringBuilder fullText;
@@ -66,7 +68,11 @@ final class State {
         if (onEvent != null) {
             onEvent.accept(evt);
         }
-        switch (ResponseEventType.from(evt.getString("type", ""))) {
+        var eventType = ResponseEventType.from(evt.getString("type", ""));
+        if (eventType == ResponseEventType.UNKNOWN) {
+            throw new IOException("Unknown streaming event type: " + evt);
+        }
+        switch (eventType) {
             case OUTPUT_TEXT_DELTA, REFUSAL_DELTA -> applyDelta(evt);
             case REASONING_TEXT_DELTA, REASONING_SUMMARY_TEXT_DELTA, REASONING_TEXT_DONE, REASONING_SUMMARY_TEXT_DONE -> markContentWithDelta(evt);
             case OUTPUT_TEXT_DONE -> applyFinalText(evt, "text");
@@ -80,7 +86,8 @@ final class State {
             case FAILED -> markFailed(evt);
             case INCOMPLETE -> markIncomplete(evt);
             case ERROR -> markTopLevelError(evt);
-            case OUTPUT_TEXT_ANNOTATION_ADDED, CREATED, QUEUED, IN_PROGRESS,
+            case REASONING_SUMMARY_PART_ADDED, REASONING_SUMMARY_PART_DONE,
+                    OUTPUT_TEXT_ANNOTATION_ADDED, CREATED, QUEUED, IN_PROGRESS,
                     FILE_SEARCH, FILE_SEARCH_SEARCHING, FILE_SEARCH_COMPLETED,
                     WEB_SEARCH, WEB_SEARCH_SEARCHING, WEB_SEARCH_COMPLETED,
                     IMAGE_GEN_IN_PROGRESS, IMAGE_GEN_GENERATING, IMAGE_GEN_PARTIAL, IMAGE_GEN_COMPLETED,
@@ -89,8 +96,7 @@ final class State {
                     MCP_CALL_IN_PROGRESS, MCP_CALL_COMPLETED, MCP_CALL_FAILED,
                     MCP_CALL_ARGUMENTS_DELTA, MCP_CALL_ARGUMENTS_DONE,
                     MCP_LIST_TOOLS_IN_PROGRESS, MCP_LIST_TOOLS_COMPLETED, MCP_LIST_TOOLS_FAILED,
-                    FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE,
-                    UNKNOWN -> {
+                    FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE -> {
             }
         }
     }
@@ -331,12 +337,6 @@ final class State {
         }
     }
 
-    /**
-     * Enumerates the server-sent event types emitted by the OpenAI Responses
-     * streaming API (see reference/openai/streaming.md). Keeping the
-     * vocabulary explicit reduces the odds of silent string typos and makes it
-     * obvious which events are intentionally ignored.
-     */
     enum ResponseEventType {
 
         OUTPUT_TEXT_DELTA("response.output_text.delta"),
@@ -356,6 +356,9 @@ final class State {
 
         OUTPUT_ITEM_ADDED("response.output_item.added"),
         OUTPUT_ITEM_DONE("response.output_item.done"),
+
+        REASONING_SUMMARY_PART_ADDED("response.reasoning_summary_part.added"),
+        REASONING_SUMMARY_PART_DONE("response.reasoning_summary_part.done"),
 
         CUSTOM_TOOL_CALL_INPUT_DELTA("response.custom_tool_call_input.delta"),
         CUSTOM_TOOL_CALL_INPUT_DONE("response.custom_tool_call_input.done"),
@@ -403,7 +406,8 @@ final class State {
         UNKNOWN("<unknown>", true);
 
         private final String wireName;
-        private final boolean ignorable;
+        private static final Map<String, ResponseEventType> WIRE_NAME_LOOKUP = Arrays.stream(values())
+                .collect(Collectors.toUnmodifiableMap(t -> t.wireName, Function.identity()));
 
         ResponseEventType(String wireName) {
             this(wireName, false);
@@ -411,21 +415,13 @@ final class State {
 
         ResponseEventType(String wireName, boolean ignorable) {
             this.wireName = wireName;
-            this.ignorable = ignorable;
-        }
-
-        boolean isIgnorable() {
-            return ignorable;
         }
 
         static ResponseEventType from(String rawType) {
             if (rawType == null || rawType.isBlank()) {
                 return UNKNOWN;
             }
-            return Arrays.stream(values())
-                    .filter(t -> t.wireName.equals(rawType))
-                    .findFirst()
-                    .orElse(UNKNOWN);
+            return WIRE_NAME_LOOKUP.getOrDefault(rawType, UNKNOWN);
         }
     }
 

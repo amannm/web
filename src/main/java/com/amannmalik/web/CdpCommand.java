@@ -7,15 +7,6 @@ import jakarta.json.JsonValue;
 import java.io.StringReader;
 import java.util.Objects;
 
-/**
- * Immutable representation of a single Chrome DevTools Protocol command.
- * <p>
- * DevTools commands always include a {@code method} name plus optional {@code params}
- * and optional {@code sessionId} when the command targets a specific session.
- * The protocol itself injects an {@code id}; callers must not supply one.
- * <p>
- * Reference: https://chromedevtools.github.io/devtools-protocol/
- */
 public record CdpCommand(String method, JsonObject params, String sessionId) {
 
     public CdpCommand {

@@ -30,7 +30,7 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         this.wsUri = Objects.requireNonNull(wsUri, "wsUri");
         this.http = Objects.requireNonNull(http, "http");
         this.defaultTimeout = Objects.requireNonNullElse(defaultTimeout, Duration.ofSeconds(10));
-        this.onEvent = onEvent != null ? onEvent : evt -> {
+        this.onEvent = onEvent != null ? onEvent : _ -> {
         };
     }
 
@@ -54,45 +54,6 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
                 .join();
     }
 
-    public JsonObject sendRaw(String rawJson) {
-        Objects.requireNonNull(rawJson, "rawJson");
-        JsonObject obj;
-        try (var r = Json.createReader(new StringReader(rawJson))) {
-            obj = r.readObject();
-        }
-        return send(obj, defaultTimeout);
-    }
-
-    public JsonObject send(JsonObject command, Duration timeout) {
-        Objects.requireNonNull(command, "command");
-        connect();
-        var id = command.containsKey("id") ? command.getInt("id") : nextId.getAndIncrement();
-        JsonObject msg;
-        if (command.containsKey("id")) {
-            msg = command;
-        } else {
-            var b = Json.createObjectBuilder(command);
-            b.add("id", id);
-            msg = b.build();
-        }
-        var fut = new CompletableFuture<JsonObject>();
-        pendingById.put(id, fut);
-        try {
-            ws.sendText(msg.toString(), true).join();
-            var toMs = Math.max(1L, timeout.toMillis());
-            return fut.get(toMs, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted waiting for CDP response", e);
-        } catch (TimeoutException e) {
-            throw new RuntimeException("Timed out waiting for CDP response (id=" + id + ")", e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException("Failed waiting for CDP response", e.getCause());
-        } finally {
-            pendingById.remove(id);
-        }
-    }
-
     public JsonObject send(CdpCommand command) {
         return send(command, defaultTimeout);
     }
@@ -102,6 +63,10 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         connect();
         var id = nextId.getAndIncrement();
         var msg = command.toJson(id);
+        return sendMessage(timeout, id, msg);
+    }
+
+    private JsonObject sendMessage(Duration timeout, int id, JsonObject msg) {
         var fut = new CompletableFuture<JsonObject>();
         pendingById.put(id, fut);
         try {
@@ -129,7 +94,6 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
             }
             var msg = incomingText.toString();
             incomingText.setLength(0);
-
             JsonObject evt;
             try (var r = Json.createReader(new StringReader(msg))) {
                 evt = r.readObject();
@@ -137,7 +101,6 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
                 System.err.println("Ignoring non-JSON CDP frame: " + msg);
                 return WebSocket.Listener.super.onText(webSocket, data, last);
             }
-
             if (evt.containsKey("id")) {
                 var id = evt.getInt("id");
                 var fut = pendingById.get(id);
