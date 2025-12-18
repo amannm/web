@@ -92,4 +92,11 @@ final class SseParser {
         eventName = "message";
         retryMillis = null;
     }
+
+    interface ThrowingConsumer<T> {
+        void accept(T value) throws IOException;
+    }
+
+    record SseEvent(String event, String data, String lastEventId, Integer retryMillis) {
+    }
 }

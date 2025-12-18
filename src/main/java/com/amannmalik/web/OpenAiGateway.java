@@ -4,7 +4,10 @@ import jakarta.json.Json;
 import jakarta.json.JsonArray;
 import jakarta.json.JsonObject;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -63,12 +66,12 @@ final class OpenAiGateway {
         var fullText = new StringBuilder(4096);
         for (var toolCalls = 0; toolCalls < MAX_TOOL_CALLS; toolCalls++) {
             var outcome = streamOnce(inputItems, tools, fullText, onTextDelta, onEvent);
-            if (outcome instanceof CompletedOutcome(var outputItems, var reasoningItems)) {
+            if (outcome instanceof Outcome.Completed(var outputItems, var reasoningItems)) {
                 inputItems.addAll(outputItems.values());
                 inputItems.addAll(reasoningItems.values());
                 return fullText.toString();
             }
-            if (!(outcome instanceof ToolCallOutcome(var pendingToolCall, var outputItems, var reasoningItems))) {
+            if (!(outcome instanceof Outcome.ToolCall(var pendingToolCall, var outputItems, var reasoningItems))) {
                 throw new IOException("Unexpected ResponsesStream outcome: " + outcome.getClass().getSimpleName());
             }
             if (!CDP_TOOL_NAME.equals(pendingToolCall.name())) {
@@ -119,7 +122,7 @@ final class OpenAiGateway {
         }
     }
 
-    private String executeCdpToolCall(CdpClient cdp, PendingToolCall pendingToolCall) {
+    private String executeCdpToolCall(CdpClient cdp, State.PendingToolCall pendingToolCall) {
         return withFailureGuard("cdp tool call", () -> {
             var command = CdpCommand.fromJsonString(pendingToolCall.input());
             return cdp.send(command).toString();
@@ -194,7 +197,7 @@ final class OpenAiGateway {
                 .build();
     }
 
-    private static JsonObject toCustomToolCallItem(PendingToolCall call) {
+    private static JsonObject toCustomToolCallItem(State.PendingToolCall call) {
         return Json.createObjectBuilder()
                 .add("type", "custom_tool_call")
                 .add("call_id", call.callId())
@@ -203,11 +206,44 @@ final class OpenAiGateway {
                 .build();
     }
 
-    private static JsonObject toCustomToolOutputItem(PendingToolCall call, String output) {
+    private static JsonObject toCustomToolOutputItem(State.PendingToolCall call, String output) {
         return Json.createObjectBuilder()
                 .add("type", "custom_tool_call_output")
                 .add("call_id", call.callId())
                 .add("output", output)
                 .build();
+    }
+
+    static final class ResponsesStream {
+
+        Outcome read(InputStream stream,
+                     StringBuilder fullText,
+                     Consumer<String> onTextDelta,
+                     Consumer<JsonObject> onEvent) throws IOException {
+            Objects.requireNonNull(stream, "stream");
+            Objects.requireNonNull(fullText, "fullText");
+            var state = new State(fullText, onTextDelta, onEvent);
+            try (var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                parseSse(reader, state);
+            }
+            state.throwIfUnsuccessful();
+            return state.toOutcome();
+        }
+
+        private static void parseSse(BufferedReader reader, State state) throws IOException {
+            var parser = new SseParser(evt -> {
+                if (evt.data().isEmpty()) {
+                    return;
+                }
+                if ("[DONE]".equals(evt.data())) {
+                    state.markDoneSignal();
+                    return;
+                }
+                state.handleData(evt.data());
+            });
+            parser.readAll(reader, state);
+            state.markIncompleteIfNeeded("SSE stream ended without terminal event");
+        }
+
     }
 }
