@@ -61,21 +61,6 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         return send(obj, defaultTimeout);
     }
 
-    public JsonObject send(JsonObject command) {
-        return send(command, defaultTimeout);
-    }
-
-    public JsonObject sendForResult(JsonObject command, Duration timeout) {
-        var envelope = send(command, timeout);
-        if (envelope.containsKey("error")) {
-            throw new RuntimeException("CDP error: " + envelope.getJsonObject("error"));
-        }
-        if (!envelope.containsKey("result")) {
-            throw new RuntimeException("CDP response missing result field: " + envelope);
-        }
-        return envelope.getJsonObject("result");
-    }
-
     public JsonObject send(JsonObject command, Duration timeout) {
         Objects.requireNonNull(command, "command");
         connect();

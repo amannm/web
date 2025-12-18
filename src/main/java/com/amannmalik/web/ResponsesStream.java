@@ -107,6 +107,7 @@ final class ResponsesStream {
         private final Map<String, JsonObject> outputItems = new LinkedHashMap<>();
         private final Map<String, JsonObject> reasoningItems = new LinkedHashMap<>();
         private final Map<String, StringBuilder> toolInputs = new LinkedHashMap<>();
+        private final Map<ContentKey, Boolean> contentWithDelta = new LinkedHashMap<>();
 
         private PendingToolCall pendingToolCall;
         private TerminalState terminal = TerminalState.IN_PROGRESS;
@@ -154,12 +155,15 @@ final class ResponsesStream {
             var type = evt.getString("type", "");
             switch (type) {
                 case "response.output_text.delta", "response.refusal.delta" -> applyDelta(evt);
+                case "response.output_text.done" -> applyFinalText(evt, "text");
+                case "response.refusal.done" -> applyFinalText(evt, "refusal");
                 case "response.output_item.added", "response.output_item.done" -> trackOutputItem(evt);
                 case "response.custom_tool_call_input.delta" -> bufferToolInput(evt);
                 case "response.custom_tool_call_input.done" -> finalizeToolCall(evt);
                 case "response.completed" -> terminal = TerminalState.COMPLETED;
                 case "response.failed" -> markFailed(evt);
                 case "response.incomplete" -> markIncomplete(evt);
+                case "error" -> markTopLevelError(evt);
                 default -> {
                 }
             }
@@ -174,9 +178,25 @@ final class ResponsesStream {
             if (delta.isEmpty()) {
                 return;
             }
+            markContentWithDelta(evt);
             fullText.append(delta);
             if (onTextDelta != null) {
                 onTextDelta.accept(delta);
+            }
+        }
+
+        private void applyFinalText(JsonObject evt, String fieldName) {
+            var text = evt.getString(fieldName, "");
+            if (text.isEmpty()) {
+                return;
+            }
+            var key = contentKey(evt);
+            if (key != null && Boolean.TRUE.equals(contentWithDelta.get(key))) {
+                return; // already reconstructed via deltas
+            }
+            fullText.append(text);
+            if (onTextDelta != null) {
+                onTextDelta.accept(text);
             }
         }
 
@@ -235,6 +255,16 @@ final class ResponsesStream {
             failureDetail = evt.toString();
         }
 
+        private void markTopLevelError(JsonObject evt) {
+            terminal = TerminalState.FAILED;
+            var code = evt.getString("code", "");
+            var msg = evt.getString("message", "");
+            failureDetail = msg.isBlank() ? code : code.isBlank() ? msg : code + ": " + msg;
+            if (failureDetail.isEmpty()) {
+                failureDetail = evt.toString();
+            }
+        }
+
         private void markIncomplete(JsonObject evt) {
             terminal = TerminalState.INCOMPLETE;
             var response = evt.getJsonObject("response");
@@ -275,8 +305,33 @@ final class ResponsesStream {
             nextSequenceNumber = seq + 1;
         }
 
+        private void markContentWithDelta(JsonObject evt) {
+            var key = contentKey(evt);
+            if (key != null) {
+                contentWithDelta.put(key, Boolean.TRUE);
+            }
+        }
+
+        private ContentKey contentKey(JsonObject evt) {
+            var itemId = evt.getString("item_id", "");
+            if (itemId.isEmpty()) {
+                return null;
+            }
+            var contentIndex = evt.getInt("content_index", -1);
+            if (contentIndex < 0) {
+                return null;
+            }
+            return new ContentKey(itemId, contentIndex);
+        }
+
         private static String fallbackCallId(String itemId) {
             return itemId == null || itemId.isBlank() ? "call_unknown" : itemId;
+        }
+    }
+
+    private record ContentKey(String itemId, int contentIndex) {
+        ContentKey {
+            Objects.requireNonNull(itemId, "itemId");
         }
     }
 }
