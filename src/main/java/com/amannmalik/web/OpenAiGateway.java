@@ -63,12 +63,12 @@ final class OpenAiGateway {
         var fullText = new StringBuilder(4096);
         for (var toolCalls = 0; toolCalls < MAX_TOOL_CALLS; toolCalls++) {
             var outcome = streamOnce(inputItems, tools, fullText, onTextDelta, onEvent);
-            if (outcome instanceof ResponsesStream.CompletedOutcome(var outputItems, var reasoningItems)) {
+            if (outcome instanceof CompletedOutcome(var outputItems, var reasoningItems)) {
                 inputItems.addAll(outputItems.values());
                 inputItems.addAll(reasoningItems.values());
                 return fullText.toString();
             }
-            if (!(outcome instanceof ResponsesStream.ToolCallOutcome(var pendingToolCall, var outputItems, var reasoningItems))) {
+            if (!(outcome instanceof ToolCallOutcome(var pendingToolCall, var outputItems, var reasoningItems))) {
                 throw new IOException("Unexpected ResponsesStream outcome: " + outcome.getClass().getSimpleName());
             }
             if (!CDP_TOOL_NAME.equals(pendingToolCall.name())) {
@@ -83,11 +83,11 @@ final class OpenAiGateway {
         throw new IOException("Exceeded max tool calls (" + MAX_TOOL_CALLS + ") without completing a response");
     }
 
-    private ResponsesStream.Outcome streamOnce(List<JsonObject> inputItems,
-                                               JsonArray tools,
-                                               StringBuilder fullText,
-                                               Consumer<String> onTextDelta,
-                                               Consumer<JsonObject> onEvent) throws IOException, InterruptedException {
+    private Outcome streamOnce(List<JsonObject> inputItems,
+                               JsonArray tools,
+                               StringBuilder fullText,
+                               Consumer<String> onTextDelta,
+                               Consumer<JsonObject> onEvent) throws IOException, InterruptedException {
         var bodyBuilder = Json.createObjectBuilder()
                 .add("model", model)
                 .add("input", toArray(inputItems))
@@ -119,7 +119,7 @@ final class OpenAiGateway {
         }
     }
 
-    private String executeCdpToolCall(CdpClient cdp, ResponsesStream.PendingToolCall pendingToolCall) {
+    private String executeCdpToolCall(CdpClient cdp, PendingToolCall pendingToolCall) {
         return withFailureGuard("cdp tool call", () -> {
             var command = CdpCommand.fromJsonString(pendingToolCall.input());
             return cdp.send(command).toString();
@@ -194,7 +194,7 @@ final class OpenAiGateway {
                 .build();
     }
 
-    private static JsonObject toCustomToolCallItem(ResponsesStream.PendingToolCall call) {
+    private static JsonObject toCustomToolCallItem(PendingToolCall call) {
         return Json.createObjectBuilder()
                 .add("type", "custom_tool_call")
                 .add("call_id", call.callId())
@@ -203,7 +203,7 @@ final class OpenAiGateway {
                 .build();
     }
 
-    private static JsonObject toCustomToolOutputItem(ResponsesStream.PendingToolCall call, String output) {
+    private static JsonObject toCustomToolOutputItem(PendingToolCall call, String output) {
         return Json.createObjectBuilder()
                 .add("type", "custom_tool_call_output")
                 .add("call_id", call.callId())
