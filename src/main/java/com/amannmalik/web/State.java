@@ -15,21 +15,19 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 final class State {
+
     private final StringBuilder fullText;
     private final Consumer<String> onTextDelta;
     private final Consumer<JsonObject> onEvent;
 
     private final Map<String, JsonObject> outputItems = new LinkedHashMap<>();
     private final Map<String, JsonObject> reasoningItems = new LinkedHashMap<>();
-    private final Map<String, StringBuilder> toolInputs = new LinkedHashMap<>();
-    private final Map<ContentKey, Boolean> contentWithDelta = new LinkedHashMap<>();
-    private final Map<ContentKey, ContentKind> contentKinds = new LinkedHashMap<>();
+    private final ContentRegistry contentRegistry = new ContentRegistry();
+    private final ToolCallAssembler toolCallAssembler = new ToolCallAssembler();
+    private final SequenceValidator sequenceValidator = new SequenceValidator();
+    private final TerminalTracker terminalTracker = new TerminalTracker();
 
     private PendingToolCall pendingToolCall;
-    private TerminalState terminal = TerminalState.IN_PROGRESS;
-    private String failureDetail = "";
-    private String incompleteDetail = "";
-    private Long nextSequenceNumber;
 
     State(StringBuilder fullText, Consumer<String> onTextDelta, Consumer<JsonObject> onEvent) {
         this.fullText = fullText;
@@ -38,7 +36,7 @@ final class State {
     }
 
     boolean shouldStop() {
-        return pendingToolCall != null || terminal.isDone();
+        return pendingToolCall != null || terminalTracker.isDone();
     }
 
     Outcome toOutcome() {
@@ -49,32 +47,19 @@ final class State {
     }
 
     void throwIfUnsuccessful() throws IOException {
-        if (terminal == TerminalState.FAILED) {
-            throw new IOException("OpenAI response failed: " + failureDetail);
-        }
-        if (terminal == TerminalState.INCOMPLETE) {
-            throw new IOException("OpenAI response incomplete: " + incompleteDetail);
-        }
+        terminalTracker.throwIfUnsuccessful();
     }
 
     void handleData(String dataJson) throws IOException {
-        JsonObject evt;
-        try (var r = Json.createReader(new StringReader(dataJson))) {
-            evt = r.readObject();
-        } catch (RuntimeException parseErr) {
-            throw new IOException("Malformed SSE payload: " + dataJson, parseErr);
-        }
-        validateSequence(evt);
+        var evt = parseEvent(dataJson);
+        sequenceValidator.validate(evt);
         if (onEvent != null) {
             onEvent.accept(evt);
         }
-        var eventType = ResponseEventType.from(evt.getString("type", ""));
-        if (eventType == ResponseEventType.UNKNOWN) {
-            throw new IOException("Unknown streaming event type: " + evt);
-        }
-        switch (eventType) {
+        switch (ResponseEventType.from(evt.getString("type", ""))) {
             case OUTPUT_TEXT_DELTA, REFUSAL_DELTA -> applyDelta(evt);
-            case REASONING_TEXT_DELTA, REASONING_SUMMARY_TEXT_DELTA, REASONING_TEXT_DONE, REASONING_SUMMARY_TEXT_DONE -> markContentWithDelta(evt);
+            case REASONING_TEXT_DELTA, REASONING_SUMMARY_TEXT_DELTA,
+                 REASONING_TEXT_DONE, REASONING_SUMMARY_TEXT_DONE -> contentRegistry.markDelta(contentKey(evt));
             case OUTPUT_TEXT_DONE -> applyFinalText(evt, "text");
             case REFUSAL_DONE -> applyFinalText(evt, "refusal");
             case CONTENT_PART_ADDED -> trackContentPart(evt);
@@ -82,14 +67,13 @@ final class State {
             case OUTPUT_ITEM_ADDED, OUTPUT_ITEM_DONE -> trackOutputItem(evt);
             case CUSTOM_TOOL_CALL_INPUT_DELTA -> bufferToolInput(evt);
             case CUSTOM_TOOL_CALL_INPUT_DONE -> finalizeToolCall(evt);
-            case COMPLETED -> terminal = TerminalState.COMPLETED;
-            case OUTPUT_AUDIO_DELTA, OUTPUT_AUDIO_DONE,
-                 OUTPUT_AUDIO_TRANSCRIPT_DELTA, OUTPUT_AUDIO_TRANSCRIPT_DONE -> {
-            }
+            case COMPLETED -> terminalTracker.markCompleted();
             case FAILED -> markFailed(evt);
             case INCOMPLETE -> markIncomplete(evt);
             case ERROR -> markTopLevelError(evt);
-            case REASONING_SUMMARY_PART_ADDED, REASONING_SUMMARY_PART_DONE,
+            case OUTPUT_AUDIO_DELTA, OUTPUT_AUDIO_DONE,
+                 OUTPUT_AUDIO_TRANSCRIPT_DELTA, OUTPUT_AUDIO_TRANSCRIPT_DONE,
+                 REASONING_SUMMARY_PART_ADDED, REASONING_SUMMARY_PART_DONE,
                  OUTPUT_TEXT_ANNOTATION_ADDED, CREATED, QUEUED, IN_PROGRESS,
                  FILE_SEARCH, FILE_SEARCH_SEARCHING, FILE_SEARCH_COMPLETED,
                  WEB_SEARCH, WEB_SEARCH_SEARCHING, WEB_SEARCH_COMPLETED,
@@ -99,13 +83,26 @@ final class State {
                  MCP_CALL_IN_PROGRESS, MCP_CALL_COMPLETED, MCP_CALL_FAILED,
                  MCP_CALL_ARGUMENTS_DELTA, MCP_CALL_ARGUMENTS_DONE,
                  MCP_LIST_TOOLS_IN_PROGRESS, MCP_LIST_TOOLS_COMPLETED, MCP_LIST_TOOLS_FAILED,
-                 FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE -> {
+                 FUNCTION_CALL_ARGUMENTS_DELTA, FUNCTION_CALL_ARGUMENTS_DONE,
+                 UNKNOWN -> {
             }
         }
     }
 
+    void markIncompleteIfNeeded(String detail) {
+        terminalTracker.markIncompleteIfPending(detail, pendingToolCall);
+    }
+
     void markDoneSignal() {
-        markIncompleteIfNeeded("Received [DONE] before a terminal response event");
+        terminalTracker.markIncompleteIfPending("Received [DONE] before a terminal response event", pendingToolCall);
+    }
+
+    private JsonObject parseEvent(String dataJson) throws IOException {
+        try (var r = Json.createReader(new StringReader(dataJson))) {
+            return r.readObject();
+        } catch (RuntimeException parseErr) {
+            throw new IOException("Malformed SSE payload: " + dataJson, parseErr);
+        }
     }
 
     private void applyDelta(JsonObject evt) {
@@ -113,29 +110,27 @@ final class State {
         if (delta.isEmpty()) {
             return;
         }
-        markContentWithDelta(evt);
-        fullText.append(delta);
-        if (onTextDelta != null) {
-            onTextDelta.accept(delta);
-        }
+        contentRegistry.markDelta(contentKey(evt));
+        appendText(delta);
     }
 
     private void applyFinalText(JsonObject evt, String fieldName) {
         var text = evt.getString(fieldName, "");
-        if (text.isEmpty()) {
-            return;
-        }
         var key = contentKey(evt);
-        appendFinalTextIfNeeded(key, text);
+        appendFinalTextIfAllowed(key, text);
     }
 
-    private void appendFinalTextIfNeeded(ContentKey key, String text) {
+    private void appendFinalTextIfAllowed(ContentKey key, String text) {
         if (text == null || text.isEmpty()) {
             return;
         }
-        if (key != null && Boolean.TRUE.equals(contentWithDelta.get(key))) {
+        if (!contentRegistry.shouldAppendFinal(key)) {
             return;
         }
+        appendText(text);
+    }
+
+    private void appendText(String text) {
         fullText.append(text);
         if (onTextDelta != null) {
             onTextDelta.accept(text);
@@ -164,14 +159,11 @@ final class State {
             return;
         }
         var kind = ContentKind.from(part.getString("type", ""));
-        contentKinds.put(key, kind);
-        var text = part.getString("text", "");
-        if (!text.isEmpty() && kind == ContentKind.OUTPUT_TEXT) {
-            appendFinalTextIfNeeded(key, text);
-        }
-        var refusal = part.getString("refusal", "");
-        if (!refusal.isEmpty() && kind == ContentKind.REFUSAL) {
-            appendFinalTextIfNeeded(key, refusal);
+        contentRegistry.noteKind(key, kind);
+        if (kind == ContentKind.OUTPUT_TEXT) {
+            appendFinalTextIfAllowed(key, part.getString("text", ""));
+        } else if (kind == ContentKind.REFUSAL) {
+            appendFinalTextIfAllowed(key, part.getString("refusal", ""));
         }
     }
 
@@ -181,11 +173,11 @@ final class State {
         if (key == null || part == null) {
             return;
         }
-        var kind = contentKinds.getOrDefault(key, ContentKind.UNKNOWN);
+        var kind = contentRegistry.kindOf(key);
         if (kind == ContentKind.OUTPUT_TEXT) {
-            appendFinalTextIfNeeded(key, part.getString("text", ""));
+            appendFinalTextIfAllowed(key, part.getString("text", ""));
         } else if (kind == ContentKind.REFUSAL) {
-            appendFinalTextIfNeeded(key, part.getString("refusal", ""));
+            appendFinalTextIfAllowed(key, part.getString("refusal", ""));
         }
     }
 
@@ -195,98 +187,48 @@ final class State {
         if (itemId.isEmpty() || delta.isEmpty()) {
             return;
         }
-        toolInputs
-                .computeIfAbsent(itemId, k -> new StringBuilder(256))
-                .append(delta);
+        toolCallAssembler.appendDelta(itemId, delta);
     }
 
     private void finalizeToolCall(JsonObject evt) {
         var itemId = evt.getString("item_id", "");
         var rawInput = evt.getString("input", "");
-        var input = rawInput.isEmpty() && toolInputs.containsKey(itemId)
-                ? toolInputs.get(itemId).toString()
-                : rawInput;
-        toolInputs.remove(itemId);
-        var item = outputItems.getOrDefault(itemId, Json.createObjectBuilder().build());
-        var name = item.getString("name", "");
-        var callId = item.getString("call_id", "");
-        pendingToolCall = new PendingToolCall(
-                name.isBlank() ? "cdp_command" : name,
-                callId.isBlank() ? fallbackCallId(itemId) : callId,
-                input
-        );
+        pendingToolCall = toolCallAssembler.finalizeToolCall(itemId, rawInput, outputItems);
     }
 
     private void markFailed(JsonObject evt) {
-        terminal = TerminalState.FAILED;
         var response = evt.getJsonObject("response");
         if (response != null) {
             var err = response.getJsonObject("error");
             if (err != null) {
                 var code = err.getString("code", "");
                 var msg = err.getString("message", "");
-                failureDetail = msg.isBlank() ? code : code.isBlank() ? msg : code + ": " + msg;
+                var detail = msg.isBlank() ? code : code.isBlank() ? msg : code + ": " + msg;
+                terminalTracker.markFailed(detail);
                 return;
             }
         }
-        failureDetail = evt.toString();
+        terminalTracker.markFailed(evt.toString());
     }
 
     private void markTopLevelError(JsonObject evt) {
-        terminal = TerminalState.FAILED;
         var code = evt.getString("code", "");
         var msg = evt.getString("message", "");
-        failureDetail = msg.isBlank() ? code : code.isBlank() ? msg : code + ": " + msg;
-        if (failureDetail.isEmpty()) {
-            failureDetail = evt.toString();
-        }
+        var detail = msg.isBlank() ? code : code.isBlank() ? msg : code + ": " + msg;
+        terminalTracker.markFailed(detail.isEmpty() ? evt.toString() : detail);
     }
 
     private void markIncomplete(JsonObject evt) {
-        terminal = TerminalState.INCOMPLETE;
         var response = evt.getJsonObject("response");
         if (response != null) {
             var incomplete = response.getJsonObject("incomplete_details");
             if (incomplete != null) {
-                incompleteDetail = incomplete.getString("reason", "");
+                var reason = incomplete.getString("reason", "");
+                terminalTracker.markIncomplete(reason.isEmpty() ? evt.toString() : reason);
+                return;
             }
         }
-        if (incompleteDetail.isEmpty()) {
-            incompleteDetail = evt.toString();
-        }
-    }
-
-    void markIncompleteIfNeeded(String detail) {
-        if (pendingToolCall != null || terminal.isDone()) {
-            return;
-        }
-        terminal = TerminalState.INCOMPLETE;
-        if (incompleteDetail.isEmpty()) {
-            incompleteDetail = detail;
-        }
-    }
-
-    private void validateSequence(JsonObject evt) throws IOException {
-        var val = evt.get("sequence_number");
-        if (!(val instanceof JsonNumber num) || !num.isIntegral()) {
-            throw new IOException("Streaming event missing integral sequence_number: " + evt);
-        }
-        var seq = num.longValue();
-        if (nextSequenceNumber == null) {
-            nextSequenceNumber = seq + 1;
-            return;
-        }
-        if (seq != nextSequenceNumber) {
-            throw new IOException("Out-of-order streaming event: expected sequence " + nextSequenceNumber + " but got " + seq + " for type " + evt.getString("type", "<unknown>"));
-        }
-        nextSequenceNumber = seq + 1;
-    }
-
-    private void markContentWithDelta(JsonObject evt) {
-        var key = contentKey(evt);
-        if (key != null) {
-            contentWithDelta.put(key, Boolean.TRUE);
-        }
+        terminalTracker.markIncomplete(evt.toString());
     }
 
     private ContentKey contentKey(JsonObject evt) {
@@ -305,6 +247,136 @@ final class State {
         return itemId == null || itemId.isBlank() ? "call_unknown" : itemId;
     }
 
+    private final class ToolCallAssembler {
+        private final Map<String, StringBuilder> toolInputs = new LinkedHashMap<>();
+
+        void appendDelta(String itemId, String delta) {
+            toolInputs
+                    .computeIfAbsent(itemId, _ -> new StringBuilder(256))
+                    .append(delta);
+        }
+
+        PendingToolCall finalizeToolCall(String itemId, String rawInput, Map<String, JsonObject> items) {
+            var safeItemId = itemId == null ? "" : itemId;
+            var input = rawInput.isEmpty() && toolInputs.containsKey(safeItemId)
+                    ? toolInputs.get(safeItemId).toString()
+                    : rawInput;
+            toolInputs.remove(safeItemId);
+            var item = items.getOrDefault(safeItemId, Json.createObjectBuilder().build());
+            var name = item.getString("name", "");
+            var callId = item.getString("call_id", "");
+            return new PendingToolCall(
+                    name.isBlank() ? "cdp_command" : name,
+                    callId.isBlank() ? fallbackCallId(safeItemId) : callId,
+                    input
+            );
+        }
+    }
+
+    private static final class ContentRegistry {
+        private final Map<ContentKey, ContentState> contentStates = new LinkedHashMap<>();
+
+        void noteKind(ContentKey key, ContentKind kind) {
+            if (key == null) {
+                return;
+            }
+            contentStates.merge(key, new ContentState(kind, false),
+                    (existing, replacement) -> new ContentState(kind, existing.hasDelta));
+        }
+
+        void markDelta(ContentKey key) {
+            if (key == null) {
+                return;
+            }
+            contentStates.merge(key, ContentState.UNKNOWN,
+                    (existing, ignored) -> new ContentState(existing.kind, true));
+        }
+
+        boolean shouldAppendFinal(ContentKey key) {
+            if (key == null) {
+                return true;
+            }
+            return !contentStates.getOrDefault(key, ContentState.UNKNOWN).hasDelta;
+        }
+
+        ContentKind kindOf(ContentKey key) {
+            if (key == null) {
+                return ContentKind.UNKNOWN;
+            }
+            return contentStates.getOrDefault(key, ContentState.UNKNOWN).kind;
+        }
+
+        private record ContentState(ContentKind kind, boolean hasDelta) {
+            private static final ContentState UNKNOWN = new ContentState(ContentKind.UNKNOWN, false);
+        }
+    }
+
+    private static final class SequenceValidator {
+        private Long nextSequenceNumber;
+
+        void validate(JsonObject evt) throws IOException {
+            var val = evt.get("sequence_number");
+            if (!(val instanceof JsonNumber num) || !num.isIntegral()) {
+                throw new IOException("Streaming event missing integral sequence_number: " + evt);
+            }
+            var seq = num.longValue();
+            if (nextSequenceNumber == null) {
+                nextSequenceNumber = seq + 1;
+                return;
+            }
+            if (seq != nextSequenceNumber) {
+                throw new IOException("Out-of-order streaming event: expected sequence " + nextSequenceNumber + " but got " + seq + " for type " + evt.getString("type", "<unknown>"));
+            }
+            nextSequenceNumber = seq + 1;
+        }
+    }
+
+    private static final class TerminalTracker {
+        private TerminalState state = TerminalState.IN_PROGRESS;
+        private String failureDetail = "";
+        private String incompleteDetail = "";
+
+        boolean isDone() {
+            return state.isDone();
+        }
+
+        void markCompleted() {
+            state = TerminalState.COMPLETED;
+        }
+
+        void markFailed(String detail) {
+            state = TerminalState.FAILED;
+            if (detail != null && !detail.isBlank()) {
+                failureDetail = detail;
+            }
+        }
+
+        void markIncomplete(String detail) {
+            state = TerminalState.INCOMPLETE;
+            if (detail != null && !detail.isBlank()) {
+                incompleteDetail = detail;
+            }
+        }
+
+        void markIncompleteIfPending(String detail, PendingToolCall pending) {
+            if (pending != null || state.isDone()) {
+                return;
+            }
+            markIncomplete(detail);
+        }
+
+        void throwIfUnsuccessful() throws IOException {
+            if (state == TerminalState.FAILED) {
+                var message = failureDetail.isBlank() ? "response failed" : failureDetail;
+                throw new IOException("OpenAI response failed: " + message);
+            }
+            if (state == TerminalState.INCOMPLETE) {
+                var message = incompleteDetail.isBlank() ? "response incomplete" : incompleteDetail;
+                throw new IOException("OpenAI response incomplete: " + message);
+            }
+        }
+    }
+
     enum TerminalState {
         IN_PROGRESS,
         COMPLETED,
@@ -319,6 +391,20 @@ final class State {
     record ContentKey(String itemId, int contentIndex) {
         ContentKey {
             Objects.requireNonNull(itemId, "itemId");
+            if (itemId.isBlank()) {
+                throw new IllegalArgumentException("itemId cannot be blank");
+            }
+            if (contentIndex < 0) {
+                throw new IllegalArgumentException("contentIndex must be non-negative");
+            }
+        }
+    }
+
+    record PendingToolCall(String name, String callId, String input) {
+        PendingToolCall {
+            name = Objects.requireNonNull(name, "name");
+            callId = Objects.requireNonNull(callId, "callId");
+            input = input == null ? "" : input;
         }
     }
 
@@ -379,7 +465,6 @@ final class State {
         IN_PROGRESS("response.in_progress"),
         ERROR("error"),
 
-        // Built-in tool families we currently ignore but keep for completeness.
         FILE_SEARCH("response.file_search_call.in_progress", true),
         FILE_SEARCH_SEARCHING("response.file_search_call.searching", true),
         FILE_SEARCH_COMPLETED("response.file_search_call.completed", true),
@@ -432,8 +517,4 @@ final class State {
             return WIRE_NAME_LOOKUP.getOrDefault(rawType, UNKNOWN);
         }
     }
-
-    record PendingToolCall(String name, String callId, String input) {
-    }
-
 }
