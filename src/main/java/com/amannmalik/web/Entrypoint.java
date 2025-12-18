@@ -8,6 +8,9 @@ import picocli.CommandLine.Parameters;
 @Command(name = "web", mixinStandardHelpOptions = true, description = "LLM-friendly CLI browser driver that proxies CDP to OpenAI Responses.", versionProvider = Entrypoint.VersionProvider.class)
 public final class Entrypoint implements Runnable {
 
+    public Entrypoint() {
+    }
+
     @Option(names = {"-p", "--cdp-port"}, required = true, description = "Local Chrome DevTools Protocol port (e.g., 9222).")
     private int cdpPort;
 

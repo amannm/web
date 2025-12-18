@@ -4,11 +4,7 @@ import jakarta.json.Json;
 import jakarta.json.JsonNumber;
 import jakarta.json.JsonObject;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.StringReader;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,9 +13,11 @@ import java.util.function.Consumer;
 
 final class ResponsesStream {
 
-    sealed interface Outcome permits CompletedOutcome, ToolCallOutcome {}
+    sealed interface Outcome permits CompletedOutcome, ToolCallOutcome {
+    }
 
-    record PendingToolCall(String name, String callId, String input) {}
+    record PendingToolCall(String name, String callId, String input) {
+    }
 
     record CompletedOutcome(Map<String, JsonObject> outputItems,
                             Map<String, JsonObject> reasoningItems) implements Outcome {
@@ -56,7 +54,6 @@ final class ResponsesStream {
                  Consumer<JsonObject> onEvent) throws IOException {
         Objects.requireNonNull(stream, "stream");
         Objects.requireNonNull(fullText, "fullText");
-
         var state = new State(fullText, onTextDelta, onEvent);
         try (var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             parseSse(reader, state);
@@ -163,7 +160,8 @@ final class ResponsesStream {
                 case "response.completed" -> terminal = TerminalState.COMPLETED;
                 case "response.failed" -> markFailed(evt);
                 case "response.incomplete" -> markIncomplete(evt);
-                default -> {}
+                default -> {
+                }
             }
         }
 

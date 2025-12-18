@@ -16,13 +16,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-public final class OpenAiGateway {
+final class OpenAiGateway {
 
     private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
     private static final int MAX_TOOL_CALLS = 8;
     private static final Duration STREAM_TIMEOUT = Duration.ofMinutes(5);
     private static final String CDP_TOOL_NAME = "cdp_command";
     private static final String TOOL_USE_INSTRUCTION = "Use the `cdp_command` custom tool to drive the browser. Call a tool before emitting any user-visible text and wait for its output before continuing.";
+    private static final String OPENAI_BETA_HEADER_VALUE = "responses-2024-12-17";
 
     private final HttpClient http;
     private final String openAiApiKey;
@@ -99,6 +100,7 @@ public final class OpenAiGateway {
                 .add("model", model)
                 .add("input", toArray(inputItems))
                 .add("stream", true)
+                .add("max_tool_calls", MAX_TOOL_CALLS)
                 .add("tool_choice", "auto")
                 .add("parallel_tool_calls", false);
         if (tools != null) {
@@ -111,6 +113,7 @@ public final class OpenAiGateway {
                 .header("Authorization", "Bearer " + openAiApiKey)
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
+                .header("OpenAI-Beta", OPENAI_BETA_HEADER_VALUE)
                 .POST(HttpRequest.BodyPublishers.ofString(bodyBuilder.build().toString(), StandardCharsets.UTF_8))
                 .build();
         var resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());

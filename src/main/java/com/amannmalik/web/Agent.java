@@ -83,7 +83,9 @@ public final class Agent {
                         return URI.create(ws);
                     }
                 }
-            } catch (RuntimeException ignored) {
+                throw new IOException("No page targets with webSocketDebuggerUrl in /json/list response.");
+            } catch (RuntimeException parseErr) {
+                throw new IOException("Malformed /json/list response: " + listResp.body(), parseErr);
             }
         }
         var versionUri = URI.create("http://127.0.0.1:" + port + "/json/version");
@@ -99,6 +101,8 @@ public final class Agent {
         JsonObject obj;
         try (var r = Json.createReader(new StringReader(resp.body()))) {
             obj = r.readObject();
+        } catch (RuntimeException parseErr) {
+            throw new IOException("Malformed /json/version response: " + resp.body(), parseErr);
         }
         var ws = obj.getString("webSocketDebuggerUrl", "");
         if (ws == null || ws.isBlank()) {

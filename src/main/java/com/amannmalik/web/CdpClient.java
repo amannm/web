@@ -1,7 +1,6 @@
 package com.amannmalik.web;
 
 import jakarta.json.Json;
-import jakarta.json.JsonArray;
 import jakarta.json.JsonObject;
 
 import java.io.StringReader;
@@ -10,12 +9,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -36,12 +30,21 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         this.wsUri = Objects.requireNonNull(wsUri, "wsUri");
         this.http = Objects.requireNonNull(http, "http");
         this.defaultTimeout = Objects.requireNonNullElse(defaultTimeout, Duration.ofSeconds(10));
-        this.onEvent = onEvent != null ? onEvent : evt -> {};
+        this.onEvent = onEvent != null ? onEvent : evt -> {
+        };
     }
 
     public synchronized void connect() {
-        if (ws != null) {
+        if (isActive()) {
             return;
+        }
+        if (ws != null) {
+            try {
+                ws.abort();
+            } catch (RuntimeException ignored) {
+            } finally {
+                ws = null;
+            }
         }
         ws = http.newWebSocketBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
@@ -139,6 +142,7 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         for (var e : pendingById.entrySet()) {
             e.getValue().completeExceptionally(error);
         }
+        ws = null;
         WebSocket.Listener.super.onError(webSocket, error);
     }
 
@@ -148,6 +152,7 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         for (var e : pendingById.entrySet()) {
             e.getValue().completeExceptionally(ex);
         }
+        ws = null;
         return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
     }
 
@@ -161,5 +166,10 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
             }
             ws = null;
         }
+    }
+
+    private boolean isActive() {
+        var socket = ws;
+        return socket != null && !socket.isInputClosed() && !socket.isOutputClosed();
     }
 }
