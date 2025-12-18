@@ -34,7 +34,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("com.amannmalik.web.cli.Entrypoint")
+    mainClass.set("com.amannmalik.web.Entrypoint")
 }
 
 java {
@@ -90,7 +90,7 @@ tasks.withType<Jar>().configureEach {
     isReproducibleFileOrder = true
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes["Main-Class"] = "com.amannmalik.web.cli.Entrypoint"
+        attributes["Main-Class"] = "com.amannmalik.web.Entrypoint"
     }
     from({
         configurations.runtimeClasspath.get()

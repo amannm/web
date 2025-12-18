@@ -48,6 +48,24 @@ final class ResponsesStream {
         }
     }
 
+    private enum ContentKind {
+        OUTPUT_TEXT,
+        REFUSAL,
+        REASONING_TEXT,
+        REASONING_SUMMARY_TEXT,
+        UNKNOWN;
+
+        static ContentKind from(String type) {
+            return switch (type) {
+                case "output_text" -> OUTPUT_TEXT;
+                case "refusal" -> REFUSAL;
+                case "reasoning_text" -> REASONING_TEXT;
+                case "reasoning_summary_text" -> REASONING_SUMMARY_TEXT;
+                default -> UNKNOWN;
+            };
+        }
+    }
+
     Outcome read(InputStream stream,
                  StringBuilder fullText,
                  Consumer<String> onTextDelta,
@@ -108,6 +126,7 @@ final class ResponsesStream {
         private final Map<String, JsonObject> reasoningItems = new LinkedHashMap<>();
         private final Map<String, StringBuilder> toolInputs = new LinkedHashMap<>();
         private final Map<ContentKey, Boolean> contentWithDelta = new LinkedHashMap<>();
+        private final Map<ContentKey, ContentKind> contentKinds = new LinkedHashMap<>();
 
         private PendingToolCall pendingToolCall;
         private TerminalState terminal = TerminalState.IN_PROGRESS;
@@ -155,8 +174,11 @@ final class ResponsesStream {
             var type = evt.getString("type", "");
             switch (type) {
                 case "response.output_text.delta", "response.refusal.delta" -> applyDelta(evt);
+                case "response.reasoning_text.delta", "response.reasoning_summary_text.delta" -> markContentWithDelta(evt);
                 case "response.output_text.done" -> applyFinalText(evt, "text");
                 case "response.refusal.done" -> applyFinalText(evt, "refusal");
+                case "response.content_part.added" -> trackContentPart(evt);
+                case "response.content_part.done" -> finalizeContentPart(evt);
                 case "response.output_item.added", "response.output_item.done" -> trackOutputItem(evt);
                 case "response.custom_tool_call_input.delta" -> bufferToolInput(evt);
                 case "response.custom_tool_call_input.done" -> finalizeToolCall(evt);
@@ -191,6 +213,13 @@ final class ResponsesStream {
                 return;
             }
             var key = contentKey(evt);
+            appendFinalTextIfNeeded(key, text);
+        }
+
+        private void appendFinalTextIfNeeded(ContentKey key, String text) {
+            if (text == null || text.isEmpty()) {
+                return;
+            }
             if (key != null && Boolean.TRUE.equals(contentWithDelta.get(key))) {
                 return; // already reconstructed via deltas
             }
@@ -212,6 +241,38 @@ final class ResponsesStream {
             outputItems.put(id, item);
             if ("reasoning".equals(item.getString("type", ""))) {
                 reasoningItems.put(id, item);
+            }
+        }
+
+        private void trackContentPart(JsonObject evt) {
+            var key = contentKey(evt);
+            var part = evt.getJsonObject("part");
+            if (key == null || part == null) {
+                return;
+            }
+            var kind = ContentKind.from(part.getString("type", ""));
+            contentKinds.put(key, kind);
+            var text = part.getString("text", "");
+            if (!text.isEmpty() && kind == ContentKind.OUTPUT_TEXT) {
+                appendFinalTextIfNeeded(key, text);
+            }
+            var refusal = part.getString("refusal", "");
+            if (!refusal.isEmpty() && kind == ContentKind.REFUSAL) {
+                appendFinalTextIfNeeded(key, refusal);
+            }
+        }
+
+        private void finalizeContentPart(JsonObject evt) {
+            var key = contentKey(evt);
+            var part = evt.getJsonObject("part");
+            if (key == null || part == null) {
+                return;
+            }
+            var kind = contentKinds.getOrDefault(key, ContentKind.UNKNOWN);
+            if (kind == ContentKind.OUTPUT_TEXT) {
+                appendFinalTextIfNeeded(key, part.getString("text", ""));
+            } else if (kind == ContentKind.REFUSAL) {
+                appendFinalTextIfNeeded(key, part.getString("refusal", ""));
             }
         }
 

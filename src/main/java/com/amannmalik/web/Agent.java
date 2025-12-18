@@ -25,6 +25,9 @@ public final class Agent {
         if (prompt.isBlank()) {
             throw new IllegalArgumentException("Prompt cannot be blank.");
         }
+        if (port <= 0) {
+            throw new IllegalArgumentException("CDP port must be positive.");
+        }
         var http = HttpClient.newBuilder()
                 .connectTimeout(CDP_TIMEOUT)
                 .build();

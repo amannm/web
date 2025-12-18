@@ -41,7 +41,9 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         if (ws != null) {
             try {
                 ws.abort();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException abortError) {
+                System.err.println("Failed to abort stale CDP WebSocket: " + abortError.getMessage());
+                abortError.printStackTrace(System.err);
             } finally {
                 ws = null;
             }
@@ -127,6 +129,7 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         for (var e : pendingById.entrySet()) {
             e.getValue().completeExceptionally(error);
         }
+        pendingById.clear();
         ws = null;
         WebSocket.Listener.super.onError(webSocket, error);
     }
@@ -137,6 +140,7 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         for (var e : pendingById.entrySet()) {
             e.getValue().completeExceptionally(ex);
         }
+        pendingById.clear();
         ws = null;
         return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
     }
@@ -146,8 +150,9 @@ public final class CdpClient implements WebSocket.Listener, AutoCloseable {
         if (ws != null) {
             try {
                 ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye").join();
-            } catch (RuntimeException ignored) {
-                // ignore
+            } catch (RuntimeException closeError) {
+                System.err.println("Failed to close CDP WebSocket cleanly: " + closeError.getMessage());
+                closeError.printStackTrace(System.err);
             }
             ws = null;
         }
