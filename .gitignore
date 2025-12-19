@@ -1,6 +1,8 @@
 .idea
 build
 .gradle
-reference/*/*
+reference/chromium/*
+reference/devtools-frontend/*
+reference/devtools-protocol/*
 node_modules
 pnpm-lock.yaml
