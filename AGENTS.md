@@ -16,17 +16,19 @@
 - Prefer keeping source code files **between ~69 and ~420 lines**.
 - Prefer pattern matching and destructuring approaches.
 - Prefer defining additional types to make invalid states unrepresentable.
+- Prefer self-documenting code.
 - Prefer `sealed`, `final` over `non-sealed`.
-- Prefer `java.util.concurrent.locks`, `java.util.concurrent.atomic` over `synchronized`, `volatile`.
+- Prefer `java.util.concurrent.atomic`, `java.util.concurrent.locks` over `volatile`, `synchronized`.
 - Prefer `if (jsonObject.get("keyName") instanceof JsonString value) { return value.getString(); }` over `if (jsonObject.containsKey("keyName")) { return jsonObject.getString("keyName"); }`.
-- Prefer using `Path`, `Instant`, `Duration` over their underlying primitive representations.
+- Prefer using `Path`, `Instant`, `Duration` over primitive representations.
 - Prefer using Java's standard library to minimize dependencies and reduce maintenance overhead.
 - Prefer leaving a `// TODO:` on all workarounds, hacks, placeholders, mocks, incomplete areas.
 - Prefer static dispatch over dynamic dispatch.
 - Prefer stateless components.
-- Prefer using generics when it makes sense.
+- Prefer using generics where it makes sense.
 - Prefer making illegal states unrepresentable and valid operations obvious.
 - Prefer keeping external dependencies furthest from the center of a codebase.
+- Prefer abiding by "You Aren't Gonna Need It" (YAGNI).
 
 # Avoided approaches
 - Avoid internal abstractions that add no value.
@@ -37,7 +39,7 @@
 - Avoid comments unless necessary.
 - Avoid framework features reliant on annotation processing.
 - Avoid runtime reflection.
-- Avoid leaving around unused methods or constructors.
+- Avoid leaving around unused methods, constructors, parameters.
 - Avoid insidious, damaging knots of unnecessary complexity.
 - Avoid features removed or still in preview as of **language level 25**.
 - Avoid `Optional` for anything other than method returns.
@@ -46,12 +48,13 @@
 - Avoid `default` interface methods.
 - Avoid declaring `Object` or `null`.
 - Avoid creating "Multi-File Source-Code Programs" (JEP 458).
-- Avoid randomly fiddling with timeouts as your attempt in "fixing" a timed-out test.
+- Avoid trying to "fix" timed-out tests by blindly increasing their timeout.
 - Avoid `@FunctionalInterface` interfaces.
 - Avoid single line methods.
 - Avoid non-private fields.
 - Avoid premature optimization.
 - Avoid hiding exceptions or warnings.
+- Avoid adding speculative code.
 
 # Environment features
 - Unrestricted internet access.
@@ -64,4 +67,3 @@
 - [Chromium DevTools Protocol](reference/devtools-protocol)
 - [OpenAI API Reference](reference/openai)
 - [Server-Sent Events (SSE) Specification](reference/server-sent-events.html)
-- [Browser-Use Source Code](reference/browser-use)

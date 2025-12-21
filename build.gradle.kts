@@ -7,6 +7,7 @@ plugins {
     jacoco
     id("com.github.spotbugs") version "6.2.5"
     pmd
+    id("org.openrewrite.rewrite") version "7.23.0"
 }
 
 group = "com.amannmalik"
@@ -29,6 +30,7 @@ dependencies {
     implementation("org.eclipse.parsson:parsson:1.1.7")
     implementation("org.bouncycastle:bcprov-jdk18on:$bouncyCastleVersion")
     implementation("org.bouncycastle:bcpkix-jdk18on:$bouncyCastleVersion")
+    rewrite("com.amannmalik:refactor:0.1.0")
     testImplementation("org.junit.jupiter:junit-jupiter:$junitVersion")
     testImplementation("org.junit.platform:junit-platform-suite:1.13.3")
 }
@@ -125,6 +127,12 @@ tasks.register<JavaExec>("generateManPage") {
     classpath = configurations.annotationProcessor.get() + sourceSets.main.get().runtimeClasspath
     mainClass.set("picocli.codegen.docgen.manpage.ManPageGenerator")
     args("-d", "${projectDir}/man", "com.amannmalik.web.cli.Entrypoint")
+}
+
+rewrite {
+    activeRecipe(
+        "com.amannmalik.refactor.RefactorPipeline",
+    )
 }
 
 spotbugs {
