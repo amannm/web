@@ -13,14 +13,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 
-public final class Agent {
+final class Agent {
 
     private static final Duration CDP_TIMEOUT = Duration.ofSeconds(10);
 
     private Agent() {
     }
 
-    public static int run(int port, String prompt) {
+    static int run(int port, String prompt) {
         Objects.requireNonNull(prompt, "prompt");
         if (prompt.isBlank()) {
             throw new IllegalArgumentException("Prompt cannot be blank.");

@@ -8,7 +8,6 @@ final class SseParser {
 
     private final ThrowingConsumer<SseEvent> onEvent;
     private final StringBuilder data = new StringBuilder(2048);
-
     private String eventName = "message";
     private String lastEventId = "";
     private Integer retryMillis;
@@ -61,15 +60,6 @@ final class SseParser {
         }
     }
 
-    private Integer parseRetry(String value) {
-        try {
-            var parsed = Integer.parseInt(value.trim());
-            return parsed >= 0 ? parsed : null;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
     private boolean dispatchIfNeeded(State state) throws IOException {
         if (data.isEmpty()) {
             resetEvent();
@@ -89,7 +79,17 @@ final class SseParser {
         retryMillis = null;
     }
 
+    private static Integer parseRetry(String value) {
+        try {
+            var parsed = Integer.parseInt(value.trim());
+            return parsed >= 0 ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     interface ThrowingConsumer<T> {
+
         void accept(T value) throws IOException;
     }
 

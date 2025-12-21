@@ -19,14 +19,12 @@ final class State {
     private final StringBuilder fullText;
     private final Consumer<String> onTextDelta;
     private final Consumer<JsonObject> onEvent;
-
     private final Map<String, JsonObject> outputItems = new LinkedHashMap<>();
     private final Map<String, JsonObject> reasoningItems = new LinkedHashMap<>();
     private final ContentRegistry contentRegistry = new ContentRegistry();
     private final ToolCallAssembler toolCallAssembler = new ToolCallAssembler();
     private final SequenceValidator sequenceValidator = new SequenceValidator();
     private final TerminalTracker terminalTracker = new TerminalTracker();
-
     private PendingToolCall pendingToolCall;
 
     State(StringBuilder fullText, Consumer<String> onTextDelta, Consumer<JsonObject> onEvent) {
@@ -95,14 +93,6 @@ final class State {
 
     void markDoneSignal() {
         terminalTracker.markIncompleteIfPending("Received [DONE] before a terminal response event", pendingToolCall);
-    }
-
-    private JsonObject parseEvent(String dataJson) throws IOException {
-        try (var r = Json.createReader(new StringReader(dataJson))) {
-            return r.readObject();
-        } catch (RuntimeException parseErr) {
-            throw new IOException("Malformed SSE payload: " + dataJson, parseErr);
-        }
     }
 
     private void applyDelta(JsonObject evt) {
@@ -231,7 +221,15 @@ final class State {
         terminalTracker.markIncomplete(evt.toString());
     }
 
-    private ContentKey contentKey(JsonObject evt) {
+    private static JsonObject parseEvent(String dataJson) throws IOException {
+        try (var r = Json.createReader(new StringReader(dataJson))) {
+            return r.readObject();
+        } catch (RuntimeException parseErr) {
+            throw new IOException("Malformed SSE payload: " + dataJson, parseErr);
+        }
+    }
+
+    private static ContentKey contentKey(JsonObject evt) {
         var itemId = evt.getString("item_id", "");
         if (itemId.isEmpty()) {
             return null;
@@ -247,16 +245,26 @@ final class State {
         return itemId == null || itemId.isBlank() ? "call_unknown" : itemId;
     }
 
-    private final class ToolCallAssembler {
+    record PendingToolCall(String name, String callId, String input) {
+
+        PendingToolCall {
+            name = Objects.requireNonNull(name, "name");
+            callId = Objects.requireNonNull(callId, "callId");
+            input = input == null ? "" : input;
+        }
+    }
+
+    private static final class ToolCallAssembler {
+
         private final Map<String, StringBuilder> toolInputs = new LinkedHashMap<>();
 
-        void appendDelta(String itemId, String delta) {
+        private void appendDelta(String itemId, String delta) {
             toolInputs
                     .computeIfAbsent(itemId, _ -> new StringBuilder(256))
                     .append(delta);
         }
 
-        PendingToolCall finalizeToolCall(String itemId, String rawInput, Map<String, JsonObject> items) {
+        private PendingToolCall finalizeToolCall(String itemId, String rawInput, Map<String, JsonObject> items) {
             var safeItemId = itemId == null ? "" : itemId;
             var input = rawInput.isEmpty() && toolInputs.containsKey(safeItemId)
                     ? toolInputs.get(safeItemId).toString()
@@ -274,9 +282,10 @@ final class State {
     }
 
     private static final class ContentRegistry {
+
         private final Map<ContentKey, ContentState> contentStates = new LinkedHashMap<>();
 
-        void noteKind(ContentKey key, ContentKind kind) {
+        private void noteKind(ContentKey key, ContentKind kind) {
             if (key == null) {
                 return;
             }
@@ -284,7 +293,7 @@ final class State {
                     (existing, replacement) -> new ContentState(kind, existing.hasDelta));
         }
 
-        void markDelta(ContentKey key) {
+        private void markDelta(ContentKey key) {
             if (key == null) {
                 return;
             }
@@ -292,14 +301,14 @@ final class State {
                     (existing, ignored) -> new ContentState(existing.kind, true));
         }
 
-        boolean shouldAppendFinal(ContentKey key) {
+        private boolean shouldAppendFinal(ContentKey key) {
             if (key == null) {
                 return true;
             }
             return !contentStates.getOrDefault(key, ContentState.UNKNOWN).hasDelta;
         }
 
-        ContentKind kindOf(ContentKey key) {
+        private ContentKind kindOf(ContentKey key) {
             if (key == null) {
                 return ContentKind.UNKNOWN;
             }
@@ -307,14 +316,16 @@ final class State {
         }
 
         private record ContentState(ContentKind kind, boolean hasDelta) {
+
             private static final ContentState UNKNOWN = new ContentState(ContentKind.UNKNOWN, false);
         }
     }
 
     private static final class SequenceValidator {
+
         private Long nextSequenceNumber;
 
-        void validate(JsonObject evt) throws IOException {
+        private void validate(JsonObject evt) throws IOException {
             var val = evt.get("sequence_number");
             if (!(val instanceof JsonNumber num) || !num.isIntegral()) {
                 throw new IOException("Streaming event missing integral sequence_number: " + evt);
@@ -332,40 +343,41 @@ final class State {
     }
 
     private static final class TerminalTracker {
+
         private TerminalState state = TerminalState.IN_PROGRESS;
         private String failureDetail = "";
         private String incompleteDetail = "";
 
-        boolean isDone() {
+        private boolean isDone() {
             return state.isDone();
         }
 
-        void markCompleted() {
+        private void markCompleted() {
             state = TerminalState.COMPLETED;
         }
 
-        void markFailed(String detail) {
+        private void markFailed(String detail) {
             state = TerminalState.FAILED;
             if (detail != null && !detail.isBlank()) {
                 failureDetail = detail;
             }
         }
 
-        void markIncomplete(String detail) {
+        private void markIncomplete(String detail) {
             state = TerminalState.INCOMPLETE;
             if (detail != null && !detail.isBlank()) {
                 incompleteDetail = detail;
             }
         }
 
-        void markIncompleteIfPending(String detail, PendingToolCall pending) {
+        private void markIncompleteIfPending(String detail, PendingToolCall pending) {
             if (pending != null || state.isDone()) {
                 return;
             }
             markIncomplete(detail);
         }
 
-        void throwIfUnsuccessful() throws IOException {
+        private void throwIfUnsuccessful() throws IOException {
             if (state == TerminalState.FAILED) {
                 var message = failureDetail.isBlank() ? "response failed" : failureDetail;
                 throw new IOException("OpenAI response failed: " + message);
@@ -377,18 +389,8 @@ final class State {
         }
     }
 
-    enum TerminalState {
-        IN_PROGRESS,
-        COMPLETED,
-        FAILED,
-        INCOMPLETE;
+    private record ContentKey(String itemId, int contentIndex) {
 
-        boolean isDone() {
-            return this != IN_PROGRESS;
-        }
-    }
-
-    record ContentKey(String itemId, int contentIndex) {
         ContentKey {
             Objects.requireNonNull(itemId, "itemId");
             if (itemId.isBlank()) {
@@ -400,22 +402,25 @@ final class State {
         }
     }
 
-    record PendingToolCall(String name, String callId, String input) {
-        PendingToolCall {
-            name = Objects.requireNonNull(name, "name");
-            callId = Objects.requireNonNull(callId, "callId");
-            input = input == null ? "" : input;
+    private enum TerminalState {
+        IN_PROGRESS,
+        COMPLETED,
+        FAILED,
+        INCOMPLETE;
+
+        private boolean isDone() {
+            return this != IN_PROGRESS;
         }
     }
 
-    enum ContentKind {
+    private enum ContentKind {
         OUTPUT_TEXT,
         REFUSAL,
         REASONING_TEXT,
         REASONING_SUMMARY_TEXT,
         UNKNOWN;
 
-        static ContentKind from(String type) {
+        private static ContentKind from(String type) {
             return switch (type) {
                 case "output_text" -> OUTPUT_TEXT;
                 case "refusal" -> REFUSAL;
@@ -426,7 +431,7 @@ final class State {
         }
     }
 
-    enum ResponseEventType {
+    private enum ResponseEventType {
 
         OUTPUT_TEXT_DELTA("response.output_text.delta"),
         OUTPUT_TEXT_DONE("response.output_text.done"),
@@ -498,9 +503,10 @@ final class State {
 
         UNKNOWN("<unknown>", true);
 
-        private final String wireName;
         private static final Map<String, ResponseEventType> WIRE_NAME_LOOKUP = Arrays.stream(values())
                 .collect(Collectors.toUnmodifiableMap(t -> t.wireName, Function.identity()));
+
+        private final String wireName;
 
         ResponseEventType(String wireName) {
             this(wireName, false);
@@ -510,7 +516,7 @@ final class State {
             this.wireName = wireName;
         }
 
-        static ResponseEventType from(String rawType) {
+        private static ResponseEventType from(String rawType) {
             if (rawType == null || rawType.isBlank()) {
                 return UNKNOWN;
             }

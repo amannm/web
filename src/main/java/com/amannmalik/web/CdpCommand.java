@@ -7,7 +7,7 @@ import jakarta.json.JsonValue;
 import java.io.StringReader;
 import java.util.Objects;
 
-public record CdpCommand(String method,
+record CdpCommand(String method,
                          JsonObject params,
                          String sessionId) {
 

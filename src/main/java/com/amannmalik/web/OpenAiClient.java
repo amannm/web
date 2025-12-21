@@ -34,7 +34,7 @@ final class OpenAiClient {
     private final ResponsesStream responsesStream;
     private final String openAiBetaHeader;
 
-    public OpenAiClient() {
+    OpenAiClient() {
         this(System.getenv("OPENAI_API_KEY"),
                 System.getenv().getOrDefault("OPENAI_MODEL", "gpt-5"),
                 System.getenv("OPENAI_BETA_RESPONSES"),
@@ -44,7 +44,7 @@ final class OpenAiClient {
                 new ResponsesStream());
     }
 
-    OpenAiClient(String openAiApiKey,
+    private OpenAiClient(String openAiApiKey,
                  String model,
                  String openAiBetaHeader,
                  HttpClient http,
@@ -59,7 +59,7 @@ final class OpenAiClient {
         this.openAiBetaHeader = normalizeBetaHeader(openAiBetaHeader);
     }
 
-    public String streamResponseTextViaCdp(String prompt,
+    String streamResponseTextViaCdp(String prompt,
                                            CdpClient cdp,
                                            Consumer<String> onTextDelta,
                                            Consumer<JsonObject> onEvent) throws IOException, InterruptedException {
@@ -129,7 +129,14 @@ final class OpenAiClient {
         }
     }
 
-    private String executeCdpToolCall(CdpClient cdp, State.PendingToolCall pendingToolCall) {
+    private String[] optionalBetaHeader() {
+        if (openAiBetaHeader == null || openAiBetaHeader.isBlank()) {
+            return new String[0];
+        }
+        return new String[]{"OpenAI-Beta", openAiBetaHeader};
+    }
+
+    private static String executeCdpToolCall(CdpClient cdp, State.PendingToolCall pendingToolCall) {
         return withFailureGuard("cdp tool call", () -> {
             var command = CdpCommand.fromJson(pendingToolCall.input());
             return cdp.send(command).toString();
@@ -150,11 +157,6 @@ final class OpenAiClient {
                     .build()
                     .toString();
         }
-    }
-
-    @FunctionalInterface
-    private interface SupplierWithIOException {
-        String get() throws Exception;
     }
 
     private static JsonObject userPrompt(String prompt) {
@@ -221,21 +223,20 @@ final class OpenAiClient {
                 .build();
     }
 
-    private String[] optionalBetaHeader() {
-        if (openAiBetaHeader == null || openAiBetaHeader.isBlank()) {
-            return new String[0];
-        }
-        return new String[]{"OpenAI-Beta", openAiBetaHeader};
-    }
-
     private static String normalizeBetaHeader(String requested) {
         var trimmed = requested == null ? "" : requested.trim();
         return trimmed.isEmpty() ? DEFAULT_BETA_HEADER_VALUE : trimmed;
     }
 
-    static final class ResponsesStream {
+    @FunctionalInterface
+    private interface SupplierWithIOException {
 
-        Outcome read(InputStream stream,
+        String get() throws Exception;
+    }
+
+    private static final class ResponsesStream {
+
+        private static Outcome read(InputStream stream,
                      StringBuilder fullText,
                      Consumer<String> onTextDelta,
                      Consumer<JsonObject> onEvent) throws IOException {

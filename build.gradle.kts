@@ -30,7 +30,7 @@ dependencies {
     implementation("org.eclipse.parsson:parsson:1.1.7")
     implementation("org.bouncycastle:bcprov-jdk18on:$bouncyCastleVersion")
     implementation("org.bouncycastle:bcpkix-jdk18on:$bouncyCastleVersion")
-    rewrite("com.amannmalik:refactor:0.1.0")
+    rewrite("com.amannmalik:refactor:0.1.2")
     testImplementation("org.junit.jupiter:junit-jupiter:$junitVersion")
     testImplementation("org.junit.platform:junit-platform-suite:1.13.3")
 }
