@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 final class OpenAiClient {
 
@@ -31,7 +32,6 @@ final class OpenAiClient {
     private final HttpClient http;
     private final String openAiApiKey;
     private final String model;
-    private final ResponsesStream responsesStream;
     private final String openAiBetaHeader;
 
     OpenAiClient() {
@@ -40,29 +40,27 @@ final class OpenAiClient {
                 System.getenv("OPENAI_BETA_RESPONSES"),
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(20))
-                        .build(),
-                new ResponsesStream());
+                        .build()
+        );
     }
 
     private OpenAiClient(String openAiApiKey,
-                 String model,
-                 String openAiBetaHeader,
-                 HttpClient http,
-                 ResponsesStream responsesStream) {
+                         String model,
+                         String openAiBetaHeader,
+                         HttpClient http) {
         if (openAiApiKey == null || openAiApiKey.isBlank()) {
             throw new IllegalStateException("OPENAI_API_KEY is required");
         }
         this.openAiApiKey = openAiApiKey;
         this.model = Objects.requireNonNullElse(model, "gpt-5");
         this.http = Objects.requireNonNull(http, "http");
-        this.responsesStream = Objects.requireNonNull(responsesStream, "responsesStream");
         this.openAiBetaHeader = normalizeBetaHeader(openAiBetaHeader);
     }
 
-    String streamResponseTextViaCdp(String prompt,
-                                           CdpClient cdp,
-                                           Consumer<String> onTextDelta,
-                                           Consumer<JsonObject> onEvent) throws IOException, InterruptedException {
+    void streamResponseTextViaCdp(String prompt,
+                                  CdpClient cdp,
+                                  Consumer<String> onTextDelta,
+                                  Consumer<JsonObject> onEvent) throws IOException, InterruptedException {
         if (prompt == null || prompt.isBlank()) {
             throw new IllegalArgumentException("prompt must be non-blank");
         }
@@ -76,7 +74,7 @@ final class OpenAiClient {
             if (outcome instanceof Outcome.Completed(var outputItems, var reasoningItems)) {
                 inputItems.addAll(outputItems.values());
                 inputItems.addAll(reasoningItems.values());
-                return fullText.toString();
+                return;
             }
             if (!(outcome instanceof Outcome.ToolCall(var pendingToolCall, var outputItems, var reasoningItems))) {
                 throw new IOException("Unexpected ResponsesStream outcome: " + outcome.getClass().getSimpleName());
@@ -121,11 +119,15 @@ final class OpenAiClient {
         var resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
         var status = resp.statusCode();
         if (status < 200 || status >= 300) {
-            var err = new String(resp.body().readAllBytes(), StandardCharsets.UTF_8);
+            byte[] content;
+            try (var body = resp.body()) {
+                content = body.readAllBytes();
+            }
+            var err = new String(content, StandardCharsets.UTF_8);
             throw new IOException("OpenAI Responses API failed: HTTP " + status + " — " + err);
         }
         try (var body = resp.body()) {
-            return responsesStream.read(body, fullText, onTextDelta, onEvent);
+            return ResponsesStream.read(body, fullText, onTextDelta, onEvent);
         }
     }
 
@@ -143,7 +145,7 @@ final class OpenAiClient {
         });
     }
 
-    private static String withFailureGuard(String label, SupplierWithIOException action) {
+    private static String withFailureGuard(String label, Supplier<String> action) {
         try {
             return action.get();
         } catch (Exception e) {
@@ -228,18 +230,12 @@ final class OpenAiClient {
         return trimmed.isEmpty() ? DEFAULT_BETA_HEADER_VALUE : trimmed;
     }
 
-    @FunctionalInterface
-    private interface SupplierWithIOException {
-
-        String get() throws Exception;
-    }
-
     private static final class ResponsesStream {
 
         private static Outcome read(InputStream stream,
-                     StringBuilder fullText,
-                     Consumer<String> onTextDelta,
-                     Consumer<JsonObject> onEvent) throws IOException {
+                                    StringBuilder fullText,
+                                    Consumer<String> onTextDelta,
+                                    Consumer<JsonObject> onEvent) throws IOException {
             Objects.requireNonNull(stream, "stream");
             Objects.requireNonNull(fullText, "fullText");
             var state = new State(fullText, onTextDelta, onEvent);
@@ -259,7 +255,11 @@ final class OpenAiClient {
                     state.markDoneSignal();
                     return;
                 }
-                state.handleData(evt.data());
+                try {
+                    state.handleData(evt.data());
+                } catch (IOException e) {
+                    throw new IllegalStateException(e);
+                }
             });
             parser.readAll(reader, state);
             state.markIncompleteIfNeeded("SSE stream ended without terminal event");

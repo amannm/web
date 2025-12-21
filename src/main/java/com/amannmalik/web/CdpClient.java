@@ -50,7 +50,7 @@ final class CdpClient implements WebSocket.Listener, AutoCloseable {
         synchronized (incomingText) {
             incomingText.append(data);
             if (!last) {
-                return WebSocket.Listener.super.onText(webSocket, data, last);
+                return WebSocket.Listener.super.onText(webSocket, data, false);
             }
             var msg = incomingText.toString();
             incomingText.setLength(0);
@@ -59,7 +59,7 @@ final class CdpClient implements WebSocket.Listener, AutoCloseable {
                 evt = r.readObject();
             } catch (RuntimeException parseErr) {
                 System.err.println("Ignoring non-JSON CDP frame: " + msg);
-                return WebSocket.Listener.super.onText(webSocket, data, last);
+                return WebSocket.Listener.super.onText(webSocket, data, true);
             }
             if (evt.containsKey("id")) {
                 var id = evt.getInt("id");
@@ -71,7 +71,7 @@ final class CdpClient implements WebSocket.Listener, AutoCloseable {
                 onEvent.accept(evt);
             }
         }
-        return WebSocket.Listener.super.onText(webSocket, data, last);
+        return WebSocket.Listener.super.onText(webSocket, data, true);
     }
 
     @Override

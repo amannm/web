@@ -11,15 +11,17 @@ import picocli.CommandLine.Parameters;
         versionProvider = Entrypoint.VersionProvider.class)
 public final class Entrypoint implements Runnable {
 
+    @SuppressWarnings("unused")
     @Option(names = {"-p", "--cdp-port"},
             required = true,
             description = "Local Chrome DevTools Protocol port (e.g., 9222).")
-    private int cdpPort;
+    int cdpPort;
 
+    @SuppressWarnings("unused")
     @Parameters(paramLabel = "PROMPT",
             arity = "1..*",
             description = "Instruction to run via the browsing agent.")
-    private String[] promptParts;
+    String[] promptParts;
 
     private Entrypoint() {
     }

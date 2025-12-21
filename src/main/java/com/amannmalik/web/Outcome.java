@@ -21,7 +21,7 @@ sealed interface Outcome permits Outcome.Completed, Outcome.ToolCall {
                     Map<String, JsonObject> reasoningItems) implements Outcome {
 
         public ToolCall {
-            pendingToolCall = Objects.requireNonNull(pendingToolCall, "pendingToolCall");
+            Objects.requireNonNull(pendingToolCall, "pendingToolCall");
             outputItems = Map.copyOf(outputItems);
             reasoningItems = Map.copyOf(reasoningItems);
         }

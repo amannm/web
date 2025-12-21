@@ -40,9 +40,7 @@ final class Agent {
             return 1;
         }
         var gateway = new OpenAiClient();
-        try (var cdp = new CdpClient(wsUri, http, CDP_TIMEOUT, evt -> {
-            System.err.println("[CDP event] " + evt);
-        })) {
+        try (var cdp = new CdpClient(wsUri, http, CDP_TIMEOUT, evt -> System.err.println("[CDP event] " + evt))) {
             gateway.streamResponseTextViaCdp(prompt, cdp, delta -> {
                         System.out.print(delta);
                         System.out.flush();

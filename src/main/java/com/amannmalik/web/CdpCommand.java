@@ -8,8 +8,8 @@ import java.io.StringReader;
 import java.util.Objects;
 
 record CdpCommand(String method,
-                         JsonObject params,
-                         String sessionId) {
+                  JsonObject params,
+                  String sessionId) {
 
     public CdpCommand {
         Objects.requireNonNull(method, "method");

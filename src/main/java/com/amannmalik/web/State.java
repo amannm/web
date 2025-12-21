@@ -470,38 +470,38 @@ final class State {
         IN_PROGRESS("response.in_progress"),
         ERROR("error"),
 
-        FILE_SEARCH("response.file_search_call.in_progress", true),
-        FILE_SEARCH_SEARCHING("response.file_search_call.searching", true),
-        FILE_SEARCH_COMPLETED("response.file_search_call.completed", true),
+        FILE_SEARCH("response.file_search_call.in_progress"),
+        FILE_SEARCH_SEARCHING("response.file_search_call.searching"),
+        FILE_SEARCH_COMPLETED("response.file_search_call.completed"),
 
-        WEB_SEARCH("response.web_search_call.in_progress", true),
-        WEB_SEARCH_SEARCHING("response.web_search_call.searching", true),
-        WEB_SEARCH_COMPLETED("response.web_search_call.completed", true),
+        WEB_SEARCH("response.web_search_call.in_progress"),
+        WEB_SEARCH_SEARCHING("response.web_search_call.searching"),
+        WEB_SEARCH_COMPLETED("response.web_search_call.completed"),
 
-        IMAGE_GEN_IN_PROGRESS("response.image_generation_call.in_progress", true),
-        IMAGE_GEN_GENERATING("response.image_generation_call.generating", true),
-        IMAGE_GEN_PARTIAL("response.image_generation_call.partial_image", true),
-        IMAGE_GEN_COMPLETED("response.image_generation_call.completed", true),
+        IMAGE_GEN_IN_PROGRESS("response.image_generation_call.in_progress"),
+        IMAGE_GEN_GENERATING("response.image_generation_call.generating"),
+        IMAGE_GEN_PARTIAL("response.image_generation_call.partial_image"),
+        IMAGE_GEN_COMPLETED("response.image_generation_call.completed"),
 
-        CODE_INTERPRETER_IN_PROGRESS("response.code_interpreter_call.in_progress", true),
-        CODE_INTERPRETER_INTERPRETING("response.code_interpreter_call.interpreting", true),
-        CODE_INTERPRETER_COMPLETED("response.code_interpreter_call.completed", true),
-        CODE_INTERPRETER_CODE_DELTA("response.code_interpreter_call_code.delta", true),
-        CODE_INTERPRETER_CODE_DONE("response.code_interpreter_call_code.done", true),
+        CODE_INTERPRETER_IN_PROGRESS("response.code_interpreter_call.in_progress"),
+        CODE_INTERPRETER_INTERPRETING("response.code_interpreter_call.interpreting"),
+        CODE_INTERPRETER_COMPLETED("response.code_interpreter_call.completed"),
+        CODE_INTERPRETER_CODE_DELTA("response.code_interpreter_call_code.delta"),
+        CODE_INTERPRETER_CODE_DONE("response.code_interpreter_call_code.done"),
 
-        MCP_CALL_IN_PROGRESS("response.mcp_call.in_progress", true),
-        MCP_CALL_COMPLETED("response.mcp_call.completed", true),
-        MCP_CALL_FAILED("response.mcp_call.failed", true),
-        MCP_CALL_ARGUMENTS_DELTA("response.mcp_call_arguments.delta", true),
-        MCP_CALL_ARGUMENTS_DONE("response.mcp_call_arguments.done", true),
-        MCP_LIST_TOOLS_IN_PROGRESS("response.mcp_list_tools.in_progress", true),
-        MCP_LIST_TOOLS_COMPLETED("response.mcp_list_tools.completed", true),
-        MCP_LIST_TOOLS_FAILED("response.mcp_list_tools.failed", true),
+        MCP_CALL_IN_PROGRESS("response.mcp_call.in_progress"),
+        MCP_CALL_COMPLETED("response.mcp_call.completed"),
+        MCP_CALL_FAILED("response.mcp_call.failed"),
+        MCP_CALL_ARGUMENTS_DELTA("response.mcp_call_arguments.delta"),
+        MCP_CALL_ARGUMENTS_DONE("response.mcp_call_arguments.done"),
+        MCP_LIST_TOOLS_IN_PROGRESS("response.mcp_list_tools.in_progress"),
+        MCP_LIST_TOOLS_COMPLETED("response.mcp_list_tools.completed"),
+        MCP_LIST_TOOLS_FAILED("response.mcp_list_tools.failed"),
 
-        FUNCTION_CALL_ARGUMENTS_DELTA("response.function_call_arguments.delta", true),
-        FUNCTION_CALL_ARGUMENTS_DONE("response.function_call_arguments.done", true),
+        FUNCTION_CALL_ARGUMENTS_DELTA("response.function_call_arguments.delta"),
+        FUNCTION_CALL_ARGUMENTS_DONE("response.function_call_arguments.done"),
 
-        UNKNOWN("<unknown>", true);
+        UNKNOWN("<unknown>");
 
         private static final Map<String, ResponseEventType> WIRE_NAME_LOOKUP = Arrays.stream(values())
                 .collect(Collectors.toUnmodifiableMap(t -> t.wireName, Function.identity()));
@@ -509,10 +509,6 @@ final class State {
         private final String wireName;
 
         ResponseEventType(String wireName) {
-            this(wireName, false);
-        }
-
-        ResponseEventType(String wireName, boolean ignorable) {
             this.wireName = wireName;
         }
 

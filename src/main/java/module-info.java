@@ -1,4 +1,4 @@
-module web.main {
+module web {
     requires transitive info.picocli;
     requires transitive jakarta.json;
     requires transitive java.net.http;

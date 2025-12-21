@@ -3,16 +3,17 @@ package com.amannmalik.web;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 final class SseParser {
 
-    private final ThrowingConsumer<SseEvent> onEvent;
+    private final Consumer<SseEvent> onEvent;
     private final StringBuilder data = new StringBuilder(2048);
     private String eventName = "message";
     private String lastEventId = "";
     private Integer retryMillis;
 
-    SseParser(ThrowingConsumer<SseEvent> onEvent) {
+    SseParser(Consumer<SseEvent> onEvent) {
         this.onEvent = Objects.requireNonNull(onEvent, "onEvent");
     }
 
